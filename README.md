@@ -14,7 +14,21 @@ Następnie w katalogu projektu:
 
 ```
 uv sync
-copy .env.example .env   # macOS/Linux: cp .env.example .env
 ```
 
-i uzupełnij `.env`.
+Utwórz plik `.env`:
+
+```
+KSEF_ENV=prod
+KSEF_NIP=<NIP firmy>
+KSEF_CERT_PATH=certs/<nazwa>.crt
+KSEF_KEY_PATH=certs/<nazwa>.key
+OUTPUT_DIR=<folder na faktury>
+```
+
+Certyfikat KSeF (typ „Uwierzytelnienie w systemie KSeF”) i klucz wrzuć do `certs/`.
+Hasło do klucza zapisz w systemowym sejfie (Pęk kluczy / Menedżer poświadczeń):
+
+```
+uv run ksef ustaw-haslo
+```
