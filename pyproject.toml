@@ -2,7 +2,7 @@
 name = "accounting-agent"
 version = "0.1.0"
 description = "Pobieranie faktur z KSeF i zapis jako PDF"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "cryptography>=50.0.2",
     "fpdf2>=2.8.9",
@@ -18,7 +18,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
