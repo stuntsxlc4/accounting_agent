@@ -42,7 +42,7 @@ def load_config(env_file: Path | None = None) -> Config:
         nip=nip,
         cert_path=_existing_file(base, "KSEF_CERT_PATH"),
         key_path=_existing_file(base, "KSEF_KEY_PATH"),
-        output_dir=base / output_dir if output_dir else None,
+        output_dir=base / Path(output_dir).expanduser() if output_dir else None,
     )
 
 

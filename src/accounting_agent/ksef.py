@@ -25,6 +25,13 @@ AUTH_IN_PROGRESS = 100
 AUTH_SUCCESS = 200
 AUTH_POLL_INTERVAL = 1.0
 AUTH_POLL_TIMEOUT = 120.0
+PAGE_SIZE = 250
+
+# Limity API: pobranie faktury 16/min i 64/h, lista faktur 16/min i 20/h.
+# https://github.com/CIRFMF/ksef-docs/blob/main/limity/limity-api.md
+INVOICE_DOWNLOAD_INTERVAL = 4.0
+MAX_RETRY_AFTER = 120
+MAX_RETRIES = 3
 
 
 class KsefError(Exception):
@@ -70,6 +77,7 @@ class KsefClient:
             headers={"X-Error-Format": "problem-details", "Accept": "application/json"},
             timeout=30.0,
         )
+        self._last_invoice_download = 0.0
 
     def close(self) -> None:
         self._http.close()
@@ -101,6 +109,48 @@ class KsefClient:
     def close_session(self, session: Session) -> None:
         self._request("DELETE", "/auth/sessions/current", token=session.access.token)
 
+    def query_purchase_invoices(
+        self, session: Session, date_from: datetime, date_to: datetime
+    ) -> list[dict]:
+        """Metadane faktur, w których jesteśmy nabywcą, wystawionych w podanym okresie."""
+        filters = {
+            "subjectType": "Subject2",
+            "dateRange": {
+                "dateType": "Issue",
+                "from": date_from.isoformat(),
+                "to": date_to.isoformat(),
+            },
+        }
+        invoices: list[dict] = []
+        page_offset = 0
+        while True:
+            page = self._request(
+                "POST",
+                "/invoices/query/metadata",
+                token=session.access.token,
+                params={"pageOffset": page_offset, "pageSize": PAGE_SIZE, "sortOrder": "Asc"},
+                json=filters,
+            )
+            invoices.extend(page["invoices"])
+            if not page["hasMore"]:
+                return invoices
+            if page["isTruncated"]:
+                raise KsefError("Ponad 10 000 faktur w okresie, zawęź zakres dat")
+            page_offset += 1
+
+    def get_invoice_xml(self, session: Session, ksef_number: str) -> bytes:
+        wait = self._last_invoice_download + INVOICE_DOWNLOAD_INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_invoice_download = time.monotonic()
+        response = self._send(
+            "GET",
+            f"/invoices/ksef/{ksef_number}",
+            token=session.access.token,
+            headers={"Accept": "application/xml"},
+        )
+        return response.content
+
     def _wait_for_auth(self, reference: str, auth_token: str) -> None:
         deadline = time.monotonic() + AUTH_POLL_TIMEOUT
         while True:
@@ -117,16 +167,30 @@ class KsefClient:
                 raise KsefError("Uwierzytelnianie trwa zbyt długo, spróbuj ponownie później")
             time.sleep(AUTH_POLL_INTERVAL)
 
-    def _request(self, method: str, path: str, *, token: str | None = None, **kwargs) -> dict:
+    def _request(self, method: str, path: str, **kwargs) -> dict:
+        response = self._send(method, path, **kwargs)
+        return response.json() if response.content else {}
+
+    def _send(
+        self, method: str, path: str, *, token: str | None = None, **kwargs
+    ) -> httpx.Response:
         if token:
             kwargs.setdefault("headers", {})["Authorization"] = f"Bearer {token}"
-        try:
-            response = self._http.request(method, path, **kwargs)
-        except httpx.HTTPError as e:
-            raise KsefError(f"Brak połączenia z KSeF ({self.env}): {e}") from e
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self._http.request(method, path, **kwargs)
+            except httpx.HTTPError as e:
+                raise KsefError(f"Brak połączenia z KSeF ({self.env}): {e}") from e
+            if response.status_code != 429 or attempt == MAX_RETRIES:
+                break
+            retry_after = int(response.headers.get("Retry-After", "1"))
+            if retry_after > MAX_RETRY_AFTER:
+                break
+            print(f"  limit zapytań KSeF, czekam {retry_after} s...")
+            time.sleep(retry_after)
         if response.is_error:
             raise KsefError(_error_message(response))
-        return response.json() if response.content else {}
+        return response
 
 
 def _token(data: dict) -> Token:

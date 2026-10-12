@@ -32,3 +32,13 @@ Hasło do klucza zapisz w systemowym sejfie (Pęk kluczy / Menedżer poświadcze
 ```
 uv run ksef ustaw-haslo
 ```
+
+## Użycie
+
+```
+uv run ksef zaloguj          # test logowania do KSeF
+uv run ksef pobierz 2026-08  # faktury zakupowe z sierpnia 2026 jako PDF do OUTPUT_DIR
+```
+
+Pliki już zapisane są pomijane bez pobierania. KSeF ma limity (m.in. 64 pobrania faktur
+na godzinę), aplikacja pobiera w spokojnym tempie i czeka, gdy serwer tego wymaga.
