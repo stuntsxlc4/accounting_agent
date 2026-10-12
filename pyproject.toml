@@ -1,0 +1,24 @@
+[project]
+name = "accounting-agent"
+version = "0.1.0"
+description = "Pobieranie faktur z KSeF i zapis jako PDF"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.2",
+    "fpdf2>=2.8.9",
+    "httpx>=0.28.1",
+    "lxml>=6.1.3",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

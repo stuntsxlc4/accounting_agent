@@ -19,3 +19,12 @@ venv/
 
 # Dane lokalne (faktury, wyciągi) – nie commitujemy
 data/
+
+# Certyfikaty i klucze KSeF
+certs/
+*.crt
+*.cer
+*.key
+*.pem
+*.p12
+*.pfx
