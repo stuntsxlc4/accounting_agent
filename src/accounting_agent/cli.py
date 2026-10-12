@@ -55,6 +55,7 @@ def cmd_download(args: argparse.Namespace) -> None:
                     date.fromisoformat(meta["issueDate"]),
                     meta["invoiceNumber"],
                     meta["seller"].get("name") or "",
+                    meta["invoiceType"],
                 )
                 path = config.output_dir / name
                 if path.exists():
