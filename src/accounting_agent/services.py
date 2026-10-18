@@ -33,8 +33,11 @@ from accounting_agent.statements.reader import read_statement
 TIMEZONE = ZoneInfo("Europe/Warsaw")
 # Płatności dotyczą też starszych faktur (w sierpniu 2026 zapłacono fakturę z lutego).
 INVOICE_LOOKBACK_MONTHS = 12
-# KSeF przyjmuje zakres dat do 100 dni w jednym zapytaniu.
-KSEF_QUERY_DAYS = 90
+# KSeF przyjmuje zakres dat do 100 dni w jednym zapytaniu, czyli najwyżej 3 pełne miesiące.
+MONTHS_PER_QUERY = 3
+# Lista faktur zamkniętego miesiąca jest pewna, gdy pobrano ją co najmniej tyle dni po jego
+# końcu (faktury trafiają do KSeF z opóźnieniem, np. wystawione w trybie offline).
+MONTH_SETTLE_DAYS = 14
 
 # Postęp operacji: komunikat oraz opcjonalnie liczba wykonanych i wszystkich kroków.
 Progress = Callable[[str, int | None, int | None], None]
@@ -99,8 +102,8 @@ def download_invoices(
         try:
             progress("Pobieranie listy faktur…", None, None)
             metadata = client.query_purchase_invoices(session, date_from, date_to)
+            _store_month(month, metadata)
             files = [_invoice_file(meta) for meta in metadata]
-            _save_index(month, files)
             saved = 0
             for done, (meta, file) in enumerate(zip(metadata, files, strict=True), 1):
                 path = folder / file.file_name
@@ -118,14 +121,20 @@ def download_invoices(
 
 def month_invoices(config: Config, month: str) -> list[InvoiceFile]:
     """Faktury miesiąca z ostatniego pobrania, z informacją, czy PDF jest na dysku."""
-    index = _index_path(month)
-    if not index.is_file():
+    cached = _load_month(month)
+    if cached is None:
         return []
     folder = invoices_folder(config, month)
-    files = [InvoiceFile(**item) for item in json.loads(index.read_text(encoding="utf-8"))]
+    files = [_invoice_file(meta) for meta in cached[1]]
     return [
         InvoiceFile(**{**asdict(f), "downloaded": (folder / f.file_name).is_file()}) for f in files
     ]
+
+
+def invoices_fetched_at(month: str) -> datetime | None:
+    """Kiedy ostatnio pobrano z KSeF listę faktur miesiąca."""
+    cached = _load_month(month)
+    return cached[0] if cached else None
 
 
 def reconcile(
@@ -151,13 +160,15 @@ def reconcile(
         for t in s.transactions
         if t.is_debit
     ]
-    lookback_from = _months_before(date_from, INVOICE_LOOKBACK_MONTHS - 1)
+    months = [_shift_month(month, -i) for i in reversed(range(INVOICE_LOOKBACK_MONTHS))]
     progress("Logowanie do KSeF…", None, None)
     with KsefClient(config.ksef_env) as client:
         session = authenticate(client, config)
         try:
-            progress("Pobieranie faktur z ostatnich 12 miesięcy…", None, None)
-            invoices = _fetch_invoices(client, session, lookback_from, date_to)
+            invoices = [
+                InvoiceRef.from_metadata(meta)
+                for meta in _invoice_metadata(client, session, months, progress)
+            ]
             match(debits, invoices)
             not_found = unpaid(invoices, debits, date_from.date(), date_to.date())
             explained = []
@@ -237,29 +248,77 @@ def _invoice_file(meta: dict) -> InvoiceFile:
     )
 
 
-def _index_path(month: str) -> Path:
+def _invoice_metadata(
+    client: KsefClient, session: Session, months: list[str], progress: Progress
+) -> list[dict]:
+    """Metadane faktur z podanych miesięcy: z pamięci, a brakujące lub niepewne z KSeF.
+
+    Kolejne miesiące do pobrania łączone są po 3 w jedno zapytanie (limit 20 zapytań/h).
+    """
+    by_month: dict[str, list[dict]] = {}
+    missing = []
+    for month in months:
+        cached = _load_month(month)
+        if cached and _is_settled(month, cached[0]):
+            by_month[month] = cached[1]
+        else:
+            missing.append(month)
+    progress(
+        f"Faktury z ostatnich {len(months)} miesięcy: z pamięci {len(by_month)}, "
+        f"z KSeF {len(missing)}",
+        None,
+        None,
+    )
+    for group in _query_groups(missing):
+        start, _ = month_range(group[0])
+        _, end = month_range(group[-1])
+        progress(f"Pobieranie listy faktur z KSeF: {group[0]} – {group[-1]}", None, None)
+        fetched = {month: [] for month in group}
+        for meta in client.query_purchase_invoices(session, start, end):
+            fetched.setdefault(meta["issueDate"][:7], []).append(meta)
+        for month in group:
+            _store_month(month, fetched[month])
+            by_month[month] = fetched[month]
+    return [meta for month in months for meta in by_month[month]]
+
+
+def _query_groups(months: list[str]) -> list[list[str]]:
+    """Kolejne miesiące po najwyżej MONTHS_PER_QUERY w grupie."""
+    groups: list[list[str]] = []
+    for month in months:
+        last = groups[-1] if groups else None
+        if last and len(last) < MONTHS_PER_QUERY and _shift_month(last[-1], 1) == month:
+            last.append(month)
+        else:
+            groups.append([month])
+    return groups
+
+
+def _is_settled(month: str, fetched_at: datetime) -> bool:
+    _, end = month_range(month)
+    return fetched_at >= end + timedelta(days=MONTH_SETTLE_DAYS)
+
+
+def _cache_path(month: str) -> Path:
     return app_data_dir() / "faktury" / f"{month}.json"
 
 
-def _save_index(month: str, files: list[InvoiceFile]) -> None:
-    path = _index_path(month)
+def _load_month(month: str) -> tuple[datetime, list[dict]] | None:
+    path = _cache_path(month)
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return datetime.fromisoformat(data["fetched_at"]), data["invoices"]
+
+
+def _store_month(month: str, metadata: list[dict]) -> None:
+    path = _cache_path(month)
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = [asdict(f) for f in files]
+    data = {"fetched_at": datetime.now(TIMEZONE).isoformat(), "invoices": metadata}
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def _fetch_invoices(
-    client: KsefClient, session: Session, date_from: datetime, date_to: datetime
-) -> list[InvoiceRef]:
-    invoices = []
-    start = date_from
-    while start <= date_to:
-        end = min(start + timedelta(days=KSEF_QUERY_DAYS) - timedelta(seconds=1), date_to)
-        invoices += client.query_purchase_invoices(session, start, end)
-        start = end + timedelta(seconds=1)
-    return [InvoiceRef.from_metadata(meta) for meta in invoices]
-
-
-def _months_before(start: datetime, months: int) -> datetime:
-    index = start.year * 12 + start.month - 1 - months
-    return start.replace(year=index // 12, month=index % 12 + 1)
+def _shift_month(month: str, delta: int) -> str:
+    start, _ = month_range(month)
+    index = start.year * 12 + start.month - 1 + delta
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"

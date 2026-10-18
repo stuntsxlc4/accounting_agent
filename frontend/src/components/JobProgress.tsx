@@ -1,5 +1,6 @@
 import { Alert, Group, Loader, Paper, Progress, Stack, Text } from '@mantine/core'
 import { IconAlertTriangle } from '@tabler/icons-react'
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { api, type Job } from '../api'
 
@@ -33,14 +34,7 @@ export function JobProgress<T>({ jobId, onFinished }: Props<T>) {
     }
   }, [jobId, onFinished])
 
-  if (job?.status === 'error') {
-    return (
-      <Alert color="red" icon={<IconAlertTriangle />} title="Operacja nie powiodła się">
-        {job.error}
-      </Alert>
-    )
-  }
-  if (job?.status === 'done') return null
+  if (job && job.status !== 'running') return null
 
   const percent = job?.total ? Math.round(((job.done ?? 0) / job.total) * 100) : null
   return (
@@ -58,5 +52,16 @@ export function JobProgress<T>({ jobId, onFinished }: Props<T>) {
         <Progress value={percent ?? 100} animated striped={percent === null} />
       </Stack>
     </Paper>
+  )
+}
+
+/** Komunikat o nieudanej operacji, do zamknięcia przez użytkownika. */
+export function JobError({ error, onClose }: { error: string | null; onClose: () => void }): ReactNode {
+  if (!error) return null
+  return (
+    <Alert color="red" icon={<IconAlertTriangle />} title="Operacja nie powiodła się" withCloseButton
+      onClose={onClose} mb="md">
+      {error}
+    </Alert>
   )
 }

@@ -20,7 +20,9 @@ class CredentialsError(Exception):
 def get_key_password() -> str:
     password = keyring.get_password(KEYRING_SERVICE, KEYRING_KEY_PASSWORD)
     if password is None:
-        raise CredentialsError("Brak hasła do klucza w sejfie. Uruchom: uv run ksef ustaw-haslo")
+        raise CredentialsError(
+            "Brak zapisanego hasła do certyfikatu KSeF. Zapisz je komendą: ksef ustaw-haslo"
+        )
     return password
 
 

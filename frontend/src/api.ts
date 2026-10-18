@@ -14,7 +14,18 @@ function token(): string | null {
 
 const appToken = token()
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status: number
+  body: unknown
+  constructor(message: string, status: number, body: unknown) {
+    super(message)
+    this.status = status
+    this.body = body
+  }
+}
+
+export const errorMessage = (e: unknown) =>
+  e instanceof ApiError ? e.message : 'Brak połączenia z aplikacją. Uruchom ją ponownie.'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
@@ -23,7 +34,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, headers })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(body?.detail ?? `Błąd serwera (${response.status})`)
+    throw new ApiError(body?.detail ?? `Błąd aplikacji (${response.status})`, response.status, body)
   }
   return response.json() as Promise<T>
 }
@@ -39,6 +50,7 @@ export interface Status {
   certificate?: { name: string; valid_to: string; days_left: number }
   invoices_dir?: string
   statements_dir?: string
+  log_dir: string
   current_month: string
   previous_month: string
 }
@@ -60,6 +72,7 @@ export interface MonthInvoices {
   month: string
   label: string
   folder: string
+  fetched_at: string | null
   invoices: InvoiceFile[]
 }
 
@@ -67,8 +80,44 @@ export interface MonthStatements {
   month: string
   label: string
   folder: string
-  files: { name: string; size: number }[]
+  files: { name: string; size: number; modified: string }[]
   report: string | null
+}
+
+export interface UploadResult extends MonthStatements {
+  added: string[]
+  replaced: string[]
+  skipped: string[]
+}
+
+export interface ReconcileRecord {
+  month: string
+  created_at: string
+  result: ReconcileResult
+}
+
+export interface ReconcileSummary {
+  created_at: string
+  matched: number
+  missing: number
+  unpaid_open: number
+  unreadable: number
+}
+
+export interface Overview {
+  month: string
+  label: string
+  invoices: { count: number; downloaded: number; fetched_at: string | null }
+  statements: number
+  reconcile: ReconcileSummary | null
+}
+
+export interface HistoryItem {
+  kind: 'download' | 'reconcile' | 'test'
+  month: string
+  summary: string
+  ok: boolean
+  at: string
 }
 
 export interface Job<T = unknown> {
@@ -114,24 +163,33 @@ export interface ReconcileResult {
   unpaid: UnpaidRow[]
 }
 
-export type OpenTarget = 'invoices_folder' | 'statements_folder' | 'invoice' | 'report'
+export type OpenTarget = 'invoices_folder' | 'statements_folder' | 'invoice' | 'report' | 'logs'
 
 export const api = {
   status: () => request<Status>('/api/status'),
   invoices: (month: string) => request<MonthInvoices>(`/api/invoices?month=${month}`),
   download: (month: string) => post<{ job_id: string }>('/api/invoices/download', { month }),
   statements: (month: string) => request<MonthStatements>(`/api/statements?month=${month}`),
-  upload: (month: string, files: File[]) => {
+  upload: (month: string, files: File[], overwrite = false) => {
     const form = new FormData()
     files.forEach((file) => form.append('files', file))
-    return request<MonthStatements>(`/api/statements/upload?month=${month}`, {
+    return request<UploadResult>(`/api/statements/upload?month=${month}&overwrite=${overwrite}`, {
       method: 'POST',
       body: form,
     })
   },
+  removeStatement: (month: string, name: string) =>
+    request<MonthStatements>(`/api/statements?month=${month}&name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
   reconcile: (month: string) => post<{ job_id: string }>('/api/reconcile', { month }),
+  lastReconcile: (month: string) =>
+    request<{ record: ReconcileRecord | null }>(`/api/reconcile/last?month=${month}`),
+  overview: (month: string) => request<Overview>(`/api/overview?month=${month}`),
+  history: () => request<HistoryItem[]>('/api/history'),
+  runningJob: () => request<{ job: Job | null }>('/api/jobs'),
   testConnection: () => post<{ job_id: string }>('/api/ksef/test', {}),
   job: <T>(id: string) => request<Job<T>>(`/api/jobs/${id}`),
-  open: (target: OpenTarget, month: string, name?: string) =>
+  open: (target: OpenTarget, month?: string, name?: string) =>
     post<{ opened: string }>('/api/open', { target, month, name }),
 }

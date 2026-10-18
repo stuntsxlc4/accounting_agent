@@ -8,6 +8,7 @@ import time
 import uvicorn
 import webview
 
+from accounting_agent import storage
 from accounting_agent.api import create_app
 from accounting_agent.config import APP_NAME
 
@@ -15,6 +16,7 @@ STARTUP_TIMEOUT = 15.0
 
 
 def main() -> None:
+    storage.setup_logging()
     token = secrets.token_urlsafe(32)
     port = _free_port()
     server = uvicorn.Server(

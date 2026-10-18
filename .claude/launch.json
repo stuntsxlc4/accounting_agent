@@ -4,7 +4,7 @@
     {
       "name": "api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "accounting_agent.api:dev_app", "--port", "8765", "--reload", "--reload-dir", "src"],
+      "runtimeArgs": ["run", "uvicorn", "accounting_agent.api:dev_app", "--factory", "--port", "8765", "--reload", "--reload-dir", "src"],
       "port": 8765
     },
     {

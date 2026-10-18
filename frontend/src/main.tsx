@@ -6,12 +6,14 @@ import './index.css'
 
 import { MantineProvider, createTheme } from '@mantine/core'
 import { DatesProvider } from '@mantine/dates'
+import { ModalsProvider } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import dayjs from 'dayjs'
 import 'dayjs/locale/pl'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 dayjs.locale('pl')
 
@@ -33,8 +35,12 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="light">
       <DatesProvider settings={{ locale: 'pl', firstDayOfWeek: 1 }}>
-        <Notifications position="top-right" />
-        <App />
+        <ModalsProvider labels={{ confirm: 'Potwierdź', cancel: 'Anuluj' }}>
+          <Notifications position="top-right" />
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </ModalsProvider>
       </DatesProvider>
     </MantineProvider>
   </StrictMode>,

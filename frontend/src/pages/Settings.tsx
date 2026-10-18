@@ -1,11 +1,12 @@
 import { Alert, Button, Card, Group, SimpleGrid, Stack, Text } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconAlertTriangle, IconPlugConnected } from '@tabler/icons-react'
-import { useCallback, useState } from 'react'
+import { IconAlertTriangle, IconFileText, IconPlugConnected } from '@tabler/icons-react'
+import { useCallback } from 'react'
 import type { Job, Status } from '../api'
-import { api } from '../api'
-import { JobProgress } from '../components/JobProgress'
+import { api, errorMessage } from '../api'
+import { JobError, JobProgress } from '../components/JobProgress'
 import { formatDate } from '../format'
+import { useJob } from '../useJob'
 import { PageHeader } from './PageHeader'
 
 interface Props {
@@ -14,37 +15,38 @@ interface Props {
 }
 
 export function Settings({ status, onChanged }: Props) {
-  const [jobId, setJobId] = useState<string | null>(null)
-
-  const test = async () => {
-    try {
-      setJobId((await api.testConnection()).job_id)
-    } catch (e) {
-      notifications.show({ color: 'red', message: String(e) })
-    }
-  }
-
-  const finished = useCallback(
+  const onDone = useCallback(
     (job: Job<{ message: string }>) => {
       if (job.status === 'done') {
         notifications.show({ color: 'green', title: 'Połączenie z KSeF działa', message: job.result?.message })
-        setJobId(null)
       }
       onChanged()
     },
     [onChanged],
   )
+  const job = useJob('test', onDone)
+
+  const openLogs = () =>
+    api.open('logs').catch((e) => notifications.show({ color: 'red', message: errorMessage(e) }))
 
   return (
     <>
       <PageHeader title="Ustawienia" subtitle="Połączenie z KSeF i foldery na dokumenty">
-        <Button leftSection={<IconPlugConnected size={18} />} onClick={test} loading={jobId !== null}
-          disabled={!status.configured}>
+        <Button variant="default" leftSection={<IconFileText size={18} />} onClick={openLogs}>
+          Dziennik zdarzeń
+        </Button>
+        <Button
+          leftSection={<IconPlugConnected size={18} />}
+          onClick={() => job.start(() => api.testConnection())}
+          loading={job.running}
+          disabled={!status.configured}
+        >
           Sprawdź połączenie z KSeF
         </Button>
       </PageHeader>
 
-      {jobId ? <JobProgress jobId={jobId} onFinished={finished} /> : null}
+      <JobError error={job.error} onClose={job.clearError} />
+      {job.jobId ? <JobProgress jobId={job.jobId} onFinished={job.finished} /> : null}
 
       {!status.configured ? (
         <Alert color="orange" icon={<IconAlertTriangle />} title="Brak konfiguracji" mb="lg">

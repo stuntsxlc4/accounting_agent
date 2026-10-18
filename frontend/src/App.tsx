@@ -1,5 +1,6 @@
-import { AppShell, Badge, Group, NavLink, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Alert, AppShell, Badge, Button, Center, Group, Loader, NavLink, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import {
+  IconAlertTriangle,
   IconBuildingBank,
   IconFileInvoice,
   IconLayoutDashboard,
@@ -26,16 +27,30 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [status, setStatus] = useState<Status | null>(null)
   const [month, setMonth] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
 
-  const loadStatus = useCallback(async () => {
-    const current = await api.status()
-    setStatus(current)
-    setMonth((m) => m ?? current.previous_month)
-  }, [])
+  const loadStatus = useCallback(
+    () =>
+      api
+        .status()
+        .then((current) => {
+          setStatus(current)
+          setOffline(false)
+          setMonth((m) => m ?? current.previous_month)
+        })
+        .catch(() => setOffline(true)),
+    [],
+  )
 
   useEffect(() => {
-    loadStatus()
-  }, [loadStatus])
+    api
+      .status()
+      .then((current) => {
+        setStatus(current)
+        setMonth(current.previous_month)
+      })
+      .catch(() => setOffline(true))
+  }, [])
 
   const go = (target: Page, targetMonth?: string) => {
     if (targetMonth) setMonth(targetMonth)
@@ -89,11 +104,28 @@ export default function App() {
       </AppShell.Navbar>
 
       <AppShell.Main bg="gray.0">
-        {status && month ? (
+        {offline ? (
+          <Center h="70%">
+            <Alert color="red" icon={<IconAlertTriangle />} title="Brak połączenia z aplikacją" maw={520}>
+              <Stack>
+                <Text size="sm">Część aplikacji działająca w tle nie odpowiada. Spróbuj ponownie albo uruchom aplikację jeszcze raz.</Text>
+                <Group>
+                  <Button variant="light" color="red" onClick={loadStatus}>
+                    Spróbuj ponownie
+                  </Button>
+                </Group>
+              </Stack>
+            </Alert>
+          </Center>
+        ) : !status || !month ? (
+          <Center h="70%">
+            <Loader />
+          </Center>
+        ) : status && month ? (
           <>
             {page === 'dashboard' && <Dashboard status={status} go={go} />}
-            {page === 'invoices' && <Invoices month={month} onMonthChange={setMonth} />}
-            {page === 'statements' && <Statements month={month} onMonthChange={setMonth} />}
+            {page === 'invoices' && <Invoices key={month} month={month} onMonthChange={setMonth} />}
+            {page === 'statements' && <Statements key={month} month={month} onMonthChange={setMonth} />}
             {page === 'settings' && <Settings status={status} onChanged={loadStatus} />}
           </>
         ) : null}

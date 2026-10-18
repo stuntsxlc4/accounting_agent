@@ -1,19 +1,22 @@
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Badge,
   Button,
   Card,
   Group,
-  List,
+  ScrollArea,
   SimpleGrid,
   Stack,
   Table,
   Tabs,
   Text,
   ThemeIcon,
+  Tooltip,
 } from '@mantine/core'
 import { Dropzone, PDF_MIME_TYPE } from '@mantine/dropzone'
+import { modals } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
 import {
   IconAlertTriangle,
@@ -23,13 +26,27 @@ import {
   IconFileTypePdf,
   IconFolderOpen,
   IconScale,
+  IconTrash,
   IconUpload,
 } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
-import { api, type DebitRow, type Job, type MonthStatements, type ReconcileResult, type UnpaidRow } from '../api'
-import { JobProgress } from '../components/JobProgress'
+import {
+  ApiError,
+  api,
+  errorMessage,
+  type DebitRow,
+  type Job,
+  type MonthStatements,
+  type ReconcileRecord,
+  type UnpaidRow,
+  type UploadResult,
+} from '../api'
+import { JobError, JobProgress } from '../components/JobProgress'
+import { CardSkeleton } from '../components/Loading'
 import { MonthSelect } from '../components/MonthSelect'
-import { formatDate, formatMoney } from '../format'
+import { PathLabel } from '../components/PathLabel'
+import { formatDate, formatDateTime, formatMoney, formatSize } from '../format'
+import { useJob } from '../useJob'
 import { PageHeader } from './PageHeader'
 
 interface Props {
@@ -47,61 +64,88 @@ const UNPAID_COLORS: Record<string, string> = {
 
 export function Statements({ month, onMonthChange }: Props) {
   const [data, setData] = useState<MonthStatements | null>(null)
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [result, setResult] = useState<ReconcileResult | null>(null)
+  const [record, setRecord] = useState<ReconcileRecord | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  const load = useCallback(() => api.statements(month).then(setData), [month])
+  const load = useCallback(() => {
+    api
+      .statements(month)
+      .then(setData)
+      .catch((e) => notifications.show({ color: 'red', message: errorMessage(e) }))
+    api
+      .lastReconcile(month)
+      .then((r) => setRecord(r.record))
+      .catch(() => setRecord(null))
+  }, [month])
 
-  useEffect(() => {
-    setData(null)
-    setResult(null)
-    load()
-  }, [load])
-
-  const upload = async (files: File[]) => {
-    setUploading(true)
-    try {
-      setData(await api.upload(month, files))
-      notifications.show({ color: 'green', message: `Dodano wyciągów: ${files.length}` })
-    } catch (e) {
-      notifications.show({ color: 'red', title: 'Nie dodano plików', message: String(e) })
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const start = async () => {
-    try {
-      setResult(null)
-      setJobId((await api.reconcile(month)).job_id)
-    } catch (e) {
-      notifications.show({ color: 'red', title: 'Nie można rozpocząć', message: String(e) })
-    }
-  }
-
-  const finished = useCallback(
-    (job: Job<ReconcileResult>) => {
-      if (job.status === 'done') {
-        setResult(job.result)
-        setJobId(null)
+  const onDone = useCallback(
+    (job: Job<ReconcileRecord>) => {
+      if (job.status === 'done' && job.result) {
+        setRecord(job.result)
+        notifications.show({ color: 'green', title: 'Porównanie gotowe', message: 'Zestawienie Excel zapisano w folderze wyciągów.' })
       }
       load()
     },
     [load],
   )
+  const job = useJob('reconcile', onDone)
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const send = async (files: File[], overwrite = false) => {
+    setUploading(true)
+    try {
+      const result = await api.upload(month, files, overwrite)
+      setData(result)
+      notifications.show({ color: 'green', title: 'Wyciągi dodane', message: uploadSummary(result) })
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        confirmReplace((e.body as { conflicts: string[] }).conflicts, () => send(files, true))
+      } else {
+        notifications.show({ color: 'red', title: 'Nie dodano plików', message: errorMessage(e) })
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const remove = (name: string) =>
+    modals.openConfirmModal({
+      title: 'Usunąć wyciąg?',
+      children: (
+        <Text size="sm">
+          Plik <b>{name}</b> zostanie przeniesiony do kosza. Możesz go stamtąd przywrócić.
+        </Text>
+      ),
+      labels: { confirm: 'Przenieś do kosza', cancel: 'Anuluj' },
+      confirmProps: { color: 'red' },
+      onConfirm: () =>
+        api
+          .removeStatement(month, name)
+          .then(setData)
+          .catch((e) => notifications.show({ color: 'red', message: errorMessage(e) })),
+    })
 
   const open = (target: 'statements_folder' | 'report', name?: string) =>
-    api.open(target, month, name).catch((e) => notifications.show({ color: 'red', message: String(e) }))
+    api.open(target, month, name).catch((e) => notifications.show({ color: 'red', message: errorMessage(e) }))
 
-  const running = jobId !== null
   const files = data?.files ?? []
 
   return (
     <>
-      <PageHeader title="Wyciągi i płatności" subtitle={data ? `${data.label} · ${data.folder}` : undefined}>
-        <MonthSelect month={month} onChange={onMonthChange} disabled={running} />
-        <Button leftSection={<IconScale size={18} />} onClick={start} loading={running} disabled={!files.length}>
+      <PageHeader
+        title="Wyciągi i płatności"
+        subtitle={data ? <PathLabel path={data.folder} onOpen={() => open('statements_folder')} /> : null}
+      >
+        <MonthSelect month={month} onChange={onMonthChange} disabled={job.running} />
+        <Button
+          leftSection={<IconScale size={18} />}
+          onClick={() => job.start(() => api.reconcile(month))}
+          loading={job.running}
+          disabled={!files.length}
+        >
           Porównaj z fakturami
         </Button>
         <Button variant="default" leftSection={<IconFolderOpen size={18} />} onClick={() => open('statements_folder')}>
@@ -110,58 +154,106 @@ export function Statements({ month, onMonthChange }: Props) {
       </PageHeader>
 
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
-        <Dropzone onDrop={upload} accept={PDF_MIME_TYPE} loading={uploading} disabled={running}>
-          <Group justify="center" gap="lg" mih={140} style={{ pointerEvents: 'none' }}>
-            <ThemeIcon size={56} radius="xl" variant="light">
-              <IconUpload size={28} />
+        <Dropzone onDrop={(f) => send(f)} accept={PDF_MIME_TYPE} loading={uploading} disabled={job.running}
+          onReject={() => notifications.show({ color: 'orange', message: 'Można dodawać tylko pliki PDF.' })}>
+          <Stack align="center" justify="center" gap={6} mih={150} style={{ pointerEvents: 'none' }}>
+            <ThemeIcon size={52} radius="xl" variant="light">
+              <IconUpload size={26} />
             </ThemeIcon>
-            <div>
-              <Text fw={600}>Przeciągnij tutaj wyciągi PDF</Text>
-              <Text size="sm" c="dimmed">
-                albo kliknij, aby wybrać pliki. Alior, Erste, UniCredit.
-              </Text>
-            </div>
-          </Group>
+            <Text fw={600} mt={4}>
+              Przeciągnij tutaj wyciągi PDF
+            </Text>
+            <Text size="sm" c="dimmed" ta="center">
+              albo kliknij, aby wybrać pliki. Obsługiwane banki: Alior, Erste, UniCredit.
+            </Text>
+          </Stack>
         </Dropzone>
 
-        <Card withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text fw={600}>Wyciągi w folderze miesiąca</Text>
-            <Badge variant="light">{files.length}</Badge>
-          </Group>
-          {files.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              Brak wyciągów. Dodaj pliki PDF obok.
-            </Text>
-          ) : (
-            <List spacing={4} size="sm" icon={<IconFileTypePdf size={16} color="var(--mantine-color-red-6)" />}
-              style={{ maxHeight: 150, overflowY: 'auto' }}>
-              {files.map((f) => (
-                <List.Item key={f.name}>{f.name}</List.Item>
-              ))}
-            </List>
-          )}
-          {data?.report ? (
-            <Button mt="sm" size="xs" variant="light" color="green"
-              leftSection={<IconFileSpreadsheet size={16} />} onClick={() => open('report', data.report!)}>
-              Otwórz ostatnie zestawienie Excel
-            </Button>
-          ) : null}
-        </Card>
+        {data === null ? (
+          <CardSkeleton />
+        ) : (
+          <Card withBorder>
+            <Group justify="space-between" mb="xs">
+              <Text fw={600}>Wyciągi w folderze miesiąca</Text>
+              <Badge variant="light">{files.length}</Badge>
+            </Group>
+            {files.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                Brak wyciągów. Dodaj pliki PDF obok.
+              </Text>
+            ) : (
+              <ScrollArea.Autosize mah={170}>
+                <Stack gap={2}>
+                  {files.map((f) => (
+                    <Group key={f.name} gap="xs" wrap="nowrap" justify="space-between">
+                      <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                        <IconFileTypePdf size={16} color="var(--mantine-color-red-6)" style={{ flexShrink: 0 }} />
+                        <Text size="sm" truncate>
+                          {f.name}
+                        </Text>
+                      </Group>
+                      <Group gap="xs" wrap="nowrap">
+                        <Text size="xs" c="dimmed">
+                          {formatSize(f.size)}
+                        </Text>
+                        <Tooltip label="Przenieś do kosza" withArrow>
+                          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove(f.name)}
+                            aria-label={`Usuń ${f.name}`} disabled={job.running}>
+                            <IconTrash size={15} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    </Group>
+                  ))}
+                </Stack>
+              </ScrollArea.Autosize>
+            )}
+          </Card>
+        )}
       </SimpleGrid>
 
-      {jobId ? (
-        <Stack mt="lg">
-          <JobProgress jobId={jobId} onFinished={finished} />
-        </Stack>
-      ) : null}
+      <Stack mt="lg">
+        <JobError error={job.error} onClose={job.clearError} />
+        {job.jobId ? <JobProgress jobId={job.jobId} onFinished={job.finished} /> : null}
+      </Stack>
 
-      {result ? <Results result={result} onOpenReport={() => open('report', result.report)} /> : null}
+      {record && !job.running ? (
+        <Results record={record} onOpenReport={() => open('report', record.result.report)} />
+      ) : null}
     </>
   )
 }
 
-function Results({ result, onOpenReport }: { result: ReconcileResult; onOpenReport: () => void }) {
+function uploadSummary(result: UploadResult) {
+  const parts = [
+    result.added.length && `nowe: ${result.added.length}`,
+    result.replaced.length && `zastąpione: ${result.replaced.length}`,
+    result.skipped.length && `już były: ${result.skipped.length}`,
+  ].filter(Boolean)
+  return parts.join(', ') || 'Brak zmian'
+}
+
+function confirmReplace(conflicts: string[], onConfirm: () => void) {
+  modals.openConfirmModal({
+    title: 'Zastąpić istniejące pliki?',
+    children: (
+      <Stack gap="xs">
+        <Text size="sm">W folderze są już pliki o tych nazwach, ale z inną zawartością:</Text>
+        {conflicts.map((name) => (
+          <Text key={name} size="sm" fw={500}>
+            {name}
+          </Text>
+        ))}
+      </Stack>
+    ),
+    labels: { confirm: 'Zastąp', cancel: 'Anuluj' },
+    confirmProps: { color: 'orange' },
+    onConfirm,
+  })
+}
+
+function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenReport: () => void }) {
+  const result = record.result
   const matched = result.banks.reduce((n, b) => n + b.matched.length, 0)
   const missing = result.banks.reduce((n, b) => n + b.missing.length, 0)
   const unpaidOpen = result.unpaid.filter((u) => u.status === 'brak płatności').length
@@ -169,9 +261,14 @@ function Results({ result, onOpenReport }: { result: ReconcileResult; onOpenRepo
   return (
     <Stack mt="lg" gap="lg">
       <Group justify="space-between">
-        <Text fw={600} size="lg">
-          Wynik porównania
-        </Text>
+        <div>
+          <Text fw={600} size="lg">
+            Wynik porównania
+          </Text>
+          <Text size="sm" c="dimmed">
+            z {formatDateTime(record.created_at)}, faktur z KSeF: {result.invoice_count}
+          </Text>
+        </div>
         <Button color="green" leftSection={<IconFileSpreadsheet size={18} />} onClick={onOpenReport}>
           Otwórz zestawienie Excel
         </Button>

@@ -3,9 +3,10 @@
 Dokumentacja: https://github.com/CIRFMF/ksef-docs
 """
 
+import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
@@ -34,8 +35,31 @@ MAX_RETRY_AFTER = 120
 MAX_RETRIES = 3
 
 
+log = logging.getLogger(__name__)
+
+# Komunikaty dla statusów uwierzytelnienia (GET /auth/{referenceNumber})
+AUTH_FAILURES = {
+    415: "Certyfikat nie ma w KSeF uprawnień do faktur tej firmy (NIP). "
+    "Uprawnienia nadaje się w Aplikacji Podatnika KSeF.",
+    425: "Sesja w KSeF została unieważniona. Spróbuj ponownie.",
+    450: "KSeF odrzucił dane logowania.",
+    460: "KSeF nie przyjął certyfikatu: jest nieważny, odwołany albo zawieszony.",
+    470: "KSeF odmówił logowania tym certyfikatem.",
+    480: "KSeF zablokował logowanie z powodu podejrzenia incydentu bezpieczeństwa. "
+    "Skontaktuj się z Ministerstwem Finansów.",
+    550: "KSeF przerwał logowanie z przyczyn technicznych. Spróbuj ponownie.",
+}
+
+
 class KsefError(Exception):
-    pass
+    """Błąd KSeF z komunikatem zrozumiałym dla użytkownika."""
+
+
+class KsefRateLimitError(KsefError):
+    def __init__(self, retry_at: datetime | None):
+        self.retry_at = retry_at
+        when = f" Spróbuj ponownie po {retry_at:%H:%M}." if retry_at else " Spróbuj później."
+        super().__init__("KSeF chwilowo ogranicza liczbę zapytań (limit godzinowy)." + when)
 
 
 @dataclass(frozen=True)
@@ -159,10 +183,11 @@ class KsefClient:
                 return
             if status["code"] != AUTH_IN_PROGRESS:
                 details = "; ".join(status.get("details") or [])
-                raise KsefError(
-                    f"Uwierzytelnianie nieudane ({status['code']}): {status['description']}"
-                    + (f" – {details}" if details else "")
+                log.warning("Uwierzytelnianie KSeF nieudane: %s %s", status, details)
+                message = AUTH_FAILURES.get(
+                    status["code"], f"Logowanie do KSeF nie powiodło się ({status['description']})."
                 )
+                raise KsefError(f"{message} Szczegóły: {details}" if details else message)
             if time.monotonic() > deadline:
                 raise KsefError("Uwierzytelnianie trwa zbyt długo, spróbuj ponownie później")
             time.sleep(AUTH_POLL_INTERVAL)
@@ -179,17 +204,24 @@ class KsefClient:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = self._http.request(method, path, **kwargs)
+            except httpx.TimeoutException as e:
+                log.warning("KSeF nie odpowiada: %s %s: %s", method, path, e)
+                raise KsefError("KSeF nie odpowiada. Spróbuj ponownie za kilka minut.") from e
             except httpx.HTTPError as e:
-                raise KsefError(f"Brak połączenia z KSeF ({self.env}): {e}") from e
+                log.warning("Brak połączenia z KSeF: %s %s: %s", method, path, e)
+                raise KsefError("Brak połączenia z KSeF. Sprawdź połączenie z internetem.") from e
             if response.status_code != 429 or attempt == MAX_RETRIES:
                 break
             retry_after = int(response.headers.get("Retry-After", "1"))
             if retry_after > MAX_RETRY_AFTER:
                 break
-            print(f"  limit zapytań KSeF, czekam {retry_after} s...")
+            log.info("Limit zapytań KSeF, czekam %s s", retry_after)
             time.sleep(retry_after)
         if response.is_error:
-            raise KsefError(_error_message(response))
+            log.warning(
+                "KSeF %s %s -> %s: %s", method, path, response.status_code, response.text[:1000]
+            )
+            raise _error(response)
         return response
 
 
@@ -197,14 +229,28 @@ def _token(data: dict) -> Token:
     return Token(token=data["token"], valid_until=datetime.fromisoformat(data["validUntil"]))
 
 
-def _error_message(response: httpx.Response) -> str:
-    prefix = f"KSeF zwrócił błąd {response.status_code}"
+def _error(response: httpx.Response) -> KsefError:
+    code = response.status_code
+    if code == 429:
+        retry_after = response.headers.get("Retry-After", "")
+        retry_at = (
+            datetime.now() + timedelta(seconds=int(retry_after)) if retry_after.isdigit() else None
+        )
+        return KsefRateLimitError(retry_at)
+    if code in (401, 403):
+        return KsefError("KSeF odmówił dostępu. Sprawdź certyfikat i uprawnienia w KSeF.")
+    if code >= 500:
+        return KsefError(f"KSeF jest chwilowo niedostępny (błąd {code}). Spróbuj ponownie później.")
+    detail = _detail(response)
+    return KsefError(f"KSeF odrzucił zapytanie: {detail}" if detail else f"KSeF: błąd {code}.")
+
+
+def _detail(response: httpx.Response) -> str:
     try:
         body = response.json()
     except ValueError:
-        return f"{prefix}: {response.text[:500]}"
-    parts = [body.get("title"), body.get("detail")]
+        return response.text[:300]
+    parts = [body.get("detail") or body.get("title")]
     for error in body.get("errors") or []:
         parts.append(error if isinstance(error, str) else str(error))
-    message = " | ".join(p for p in parts if p)
-    return f"{prefix}: {message or response.text[:500]}"
+    return " ".join(p for p in parts if p)

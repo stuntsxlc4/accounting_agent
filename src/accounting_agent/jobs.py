@@ -16,6 +16,10 @@ from accounting_agent.statements.models import StatementError
 
 EXPECTED_ERRORS = (ConfigError, CredentialsError, KsefError, StatementError)
 MAX_LOG_LINES = 500
+UNEXPECTED_ERROR = (
+    "Wystąpił nieoczekiwany błąd. Szczegóły zapisano w dzienniku aplikacji "
+    "(Ustawienia → Dziennik zdarzeń)."
+)
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +72,10 @@ class JobRunner:
             with self._lock:
                 job.result, job.status, job.message = result, "done", "Gotowe"
         except EXPECTED_ERRORS as e:
+            log.warning("Zadanie %s zakończone błędem: %s", job.kind, e)
             with self._lock:
                 job.error, job.status = str(e), "error"
-        except Exception as e:
+        except Exception:
             log.exception("Błąd zadania %s", job.kind)
             with self._lock:
-                job.error, job.status = f"Nieoczekiwany błąd: {e}", "error"
+                job.error, job.status = UNEXPECTED_ERROR, "error"

@@ -1,5 +1,6 @@
 import { MonthPickerInput } from '@mantine/dates'
 import { IconCalendarMonth } from '@tabler/icons-react'
+import { useState } from 'react'
 import { dateToMonth, monthToDate } from '../format'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function MonthSelect({ month, onChange, disabled }: Props) {
+  const [today] = useState(() => new Date())
   return (
     <MonthPickerInput
       label="Miesiąc"
@@ -16,7 +18,7 @@ export function MonthSelect({ month, onChange, disabled }: Props) {
       onChange={(value) => value && onChange(dateToMonth(value))}
       valueFormat="MMMM YYYY"
       leftSection={<IconCalendarMonth size={18} stroke={1.6} />}
-      maxDate={new Date()}
+      maxDate={today}
       disabled={disabled}
       w={220}
       styles={{ input: { textTransform: 'capitalize' } }}
