@@ -1,7 +1,7 @@
 [project]
 name = "accounting-agent"
 version = "0.1.0"
-description = "Pobieranie faktur z KSeF i zapis jako PDF"
+description = "Desktop app that downloads purchase invoices from KSeF and reconciles them with bank statements"
 requires-python = ">=3.14"
 dependencies = [
     "cryptography>=50.0.2",

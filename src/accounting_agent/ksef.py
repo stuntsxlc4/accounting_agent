@@ -71,7 +71,6 @@ class Token:
 @dataclass(frozen=True)
 class Session:
     access: Token
-    refresh: Token
 
 
 def build_auth_request(challenge: str, nip: str) -> etree._Element:
@@ -128,7 +127,7 @@ class KsefClient:
         self._wait_for_auth(reference, auth_token)
 
         tokens = self._request("POST", "/auth/token/redeem", token=auth_token)
-        return Session(access=_token(tokens["accessToken"]), refresh=_token(tokens["refreshToken"]))
+        return Session(access=_token(tokens["accessToken"]))
 
     def close_session(self, session: Session) -> None:
         self._request("DELETE", "/auth/sessions/current", token=session.access.token)

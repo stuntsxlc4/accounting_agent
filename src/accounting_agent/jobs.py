@@ -5,7 +5,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from accounting_agent.config import ConfigError
@@ -15,7 +15,6 @@ from accounting_agent.services import Progress
 from accounting_agent.statements.models import StatementError
 
 EXPECTED_ERRORS = (ConfigError, CredentialsError, KsefError, StatementError)
-MAX_LOG_LINES = 500
 UNEXPECTED_ERROR = (
     "Wystąpił nieoczekiwany błąd. Szczegóły zapisano w dzienniku aplikacji "
     "(Ustawienia → Dziennik zdarzeń)."
@@ -32,7 +31,6 @@ class Job:
     message: str = ""
     done: int | None = None
     total: int | None = None
-    log: list[str] = field(default_factory=list)
     error: str | None = None
     result: Any = None
 
@@ -64,8 +62,6 @@ class JobRunner:
         def progress(message: str, done: int | None = None, total: int | None = None) -> None:
             with self._lock:
                 job.message, job.done, job.total = message, done, total
-                job.log.append(message)
-                del job.log[:-MAX_LOG_LINES]
 
         try:
             result = work(progress)

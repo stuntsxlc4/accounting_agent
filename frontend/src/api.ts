@@ -50,8 +50,6 @@ export interface Status {
   certificate?: { name: string; valid_to: string; days_left: number }
   invoices_dir?: string
   statements_dir?: string
-  log_dir: string
-  current_month: string
   previous_month: string
 }
 
@@ -80,7 +78,7 @@ export interface MonthStatements {
   month: string
   label: string
   folder: string
-  files: { name: string; size: number; modified: string }[]
+  files: { name: string; size: number }[]
   report: string | null
 }
 
@@ -127,7 +125,6 @@ export interface Job<T = unknown> {
   message: string
   done: number | null
   total: number | null
-  log: string[]
   error: string | null
   result: T | null
 }

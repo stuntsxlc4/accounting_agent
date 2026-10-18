@@ -84,11 +84,7 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
     def status() -> dict:
         now = datetime.now(TIMEZONE)
         previous = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-        result = {
-            "current_month": now.strftime("%Y-%m"),
-            "previous_month": previous,
-            "log_dir": str(storage.log_dir()),
-        }
+        result = {"previous_month": previous}
         try:
             config = load_config()
         except ConfigError as e:
@@ -162,16 +158,7 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
             "month": month,
             "label": _label(month),
             "folder": str(folder),
-            "files": [
-                {
-                    "name": f.name,
-                    "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime, TIMEZONE).isoformat(
-                        timespec="seconds"
-                    ),
-                }
-                for f in files
-            ],
+            "files": [{"name": f.name, "size": f.stat().st_size} for f in files],
             "report": report,
         }
 
