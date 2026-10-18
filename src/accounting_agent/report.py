@@ -68,7 +68,7 @@ def write_report(
 
     by_account: dict[str, list[Debit]] = defaultdict(list)
     for debit in debits:
-        by_account[_sheet_name(debit.bank, debit.account, statements)].append(debit)
+        by_account[account_label(debit.bank, debit.account, statements)].append(debit)
 
     _summary_sheet(summary, title, statements, by_account, unpaid, unreadable)
     for sheet_name, account_debits in sorted(by_account.items()):
@@ -116,7 +116,7 @@ def _summary_sheet(ws, title, statements, by_account, unpaid, unreadable) -> Non
 
 
 def _bank_sheet(ws, sheet_name: str, debits: list[Debit], statements: list[Statement]) -> None:
-    own = [s for s in statements if _sheet_name(s.bank, s.account, statements) == sheet_name]
+    own = [s for s in statements if account_label(s.bank, s.account, statements) == sheet_name]
     ws["A1"] = f"{sheet_name} – rachunek {_account(own[0].account)} ({own[0].currency})"
     ws["A1"].font = TITLE
     periods = sorted(p for s in own for p in (s.period_from, s.period_to) if p)
@@ -253,7 +253,7 @@ def _widths(ws, widths: list[int]) -> None:
         ws.column_dimensions[get_column_letter(col)].width = width
 
 
-def _sheet_name(bank: str, account: str, statements: list[Statement]) -> str:
+def account_label(bank: str, account: str, statements: list[Statement]) -> str:
     """Nazwa banku, z końcówką numeru rachunku, gdy bank ma kilka rachunków."""
     accounts = {s.account for s in statements if s.bank == bank}
     return f"{bank} {account[-4:]}" if len(accounts) > 1 else bank

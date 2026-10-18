@@ -13,6 +13,7 @@ NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 INVOICE_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Faktury ZAKUPOWE")
 # Wyciągi: Ten Komputer > Obrazy > AAA Ludna 2 > AAA L2 Księgowość > Wyciągi > <Miesiąc RRRR>
 STATEMENT_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Wyciągi")
+APP_NAME = "Faktury KSeF"
 FOLDERID_PICTURES = uuid.UUID("33E28130-4E1E-4676-835A-98395C3BC3BB")
 
 
@@ -53,6 +54,15 @@ def load_config(env_file: Path | None = None) -> Config:
         output_dir=pictures_dir().joinpath(*INVOICE_FOLDERS),
         statements_dir=pictures_dir().joinpath(*STATEMENT_FOLDERS),
     )
+
+
+def app_data_dir() -> Path:
+    """Dane aplikacji: Windows %LOCALAPPDATA%, macOS ~/Library/Application Support."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:
+        base = Path.home() / "Library" / "Application Support"
+    return base / APP_NAME
 
 
 def pictures_dir() -> Path:

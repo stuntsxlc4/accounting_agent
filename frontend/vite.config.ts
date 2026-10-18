@@ -1,0 +1,12 @@
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+// Tryb deweloperski: API z `uv run uvicorn accounting_agent.api:dev_app --port 8765 --reload`
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: { '/api': 'http://127.0.0.1:8765' },
+  },
+  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1500 },
+})
