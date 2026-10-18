@@ -56,6 +56,8 @@ def setup_logging() -> Path:
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.INFO)
+    for noisy in ("httpx", "httpcore", "fontTools", "pdfminer", "uvicorn.access"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     if not any(getattr(h, "baseFilename", None) == str(path) for h in root.handlers):
         root.addHandler(handler)
     return path

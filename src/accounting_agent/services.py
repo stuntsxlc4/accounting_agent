@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -38,6 +39,8 @@ MONTHS_PER_QUERY = 3
 # Lista faktur zamkniętego miesiąca jest pewna, gdy pobrano ją co najmniej tyle dni po jego
 # końcu (faktury trafiają do KSeF z opóźnieniem, np. wystawione w trybie offline).
 MONTH_SETTLE_DAYS = 14
+
+KSEF_NUMBER = re.compile(r"[0-9A-Z-]{35,36}")
 
 # Postęp operacji: komunikat oraz opcjonalnie liczba wykonanych i wszystkich kroków.
 Progress = Callable[[str, int | None, int | None], None]
@@ -110,7 +113,7 @@ def download_invoices(
                 if path.exists():
                     progress(f"Już pobrana: {file.file_name}", done, len(files))
                     continue
-                xml = client.get_invoice_xml(session, meta["ksefNumber"])
+                xml = invoice_xml(client, session, meta["ksefNumber"])
                 render_invoice_pdf(parse_invoice(xml, meta["ksefNumber"]), path)
                 saved += 1
                 progress(f"Zapisano: {file.file_name}", done, len(files))
@@ -129,6 +132,24 @@ def month_invoices(config: Config, month: str) -> list[InvoiceFile]:
     return [
         InvoiceFile(**{**asdict(f), "downloaded": (folder / f.file_name).is_file()}) for f in files
     ]
+
+
+def invoice_xml(client: KsefClient, session: Session, ksef_number: str) -> bytes:
+    """XML faktury z lokalnej kopii, a gdy jej brak, z KSeF (z zapisem kopii).
+
+    Faktura w KSeF jest niezmienna, więc raz pobrany XML nie wymaga ponownego pobierania.
+    """
+    if not KSEF_NUMBER.fullmatch(ksef_number):
+        raise ValueError(f"Niepoprawny numer KSeF: {ksef_number}")
+    path = app_data_dir() / "xml" / f"{ksef_number}.xml"
+    if path.is_file():
+        return path.read_bytes()
+    xml = client.get_invoice_xml(session, ksef_number)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(xml)
+    os.replace(tmp, path)
+    return xml
 
 
 def invoices_fetched_at(month: str) -> datetime | None:
@@ -174,7 +195,7 @@ def reconcile(
             explained = []
             for done, invoice in enumerate(not_found, 1):
                 progress(f"Sposób płatności: {invoice.number}", done, len(not_found))
-                xml = client.get_invoice_xml(session, invoice.ksef_number)
+                xml = invoice_xml(client, session, invoice.ksef_number)
                 explained.append(explain_unpaid(invoice, parse_invoice(xml, invoice.ksef_number)))
             not_paid = settle_corrections(explained)
         finally:

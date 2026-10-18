@@ -376,18 +376,18 @@ function DebitTable({ title, rows, color }: { title?: string; rows: DebitRow[]; 
           <Table striped verticalSpacing="xs" fz="sm">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Data obciążenia</Table.Th>
+                <Table.Th className="nowrap">Data obciążenia</Table.Th>
                 <Table.Th ta="right">Kwota</Table.Th>
-                <Table.Th>Rodzaj</Table.Th>
+                <Table.Th w={130}>Rodzaj</Table.Th>
                 <Table.Th>Kontrahent / opis</Table.Th>
-                <Table.Th>Faktura</Table.Th>
-                <Table.Th>Uwagi</Table.Th>
+                <Table.Th miw={200}>Faktura</Table.Th>
+                <Table.Th miw={180}>Uwagi</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {rows.map((row, i) => (
                 <Table.Tr key={i}>
-                  <Table.Td>
+                  <Table.Td className="nowrap">
                     {formatDate(row.booking_date)}
                     {row.operation_date && row.operation_date !== row.booking_date ? (
                       <Text size="xs" c="dimmed">
@@ -399,14 +399,27 @@ function DebitTable({ title, rows, color }: { title?: string; rows: DebitRow[]; 
                     {formatMoney(row.amount, row.currency)}
                   </Table.Td>
                   <Table.Td>
-                    <Badge variant="light" color={row.kind === 'karta' ? 'grape' : row.kind === 'przelew' ? 'blue' : 'gray'}>
+                    <Badge variant="light" style={{ overflow: 'visible' }}
+                      color={row.kind === 'karta' ? 'grape' : row.kind === 'przelew' ? 'blue' : 'gray'}>
                       {row.kind}
                     </Badge>
                   </Table.Td>
-                  <Table.Td maw={380}>
-                    <Text size="sm" lineClamp={2}>
-                      {row.description}
-                    </Text>
+                  <Table.Td maw={420}>
+                    {row.counterparty ? (
+                      <Text size="sm" fw={500} lineClamp={2}>
+                        {row.counterparty}
+                      </Text>
+                    ) : null}
+                    <Tooltip label={row.description} multiline maw={520} openDelay={400} withArrow>
+                      <Text size="xs" c="dimmed" lineClamp={2}>
+                        {transferTitle(row.description)}
+                      </Text>
+                    </Tooltip>
+                    {row.account ? (
+                      <Text size="xs" c="dimmed" ff="monospace">
+                        {row.account}
+                      </Text>
+                    ) : null}
                   </Table.Td>
                   <Table.Td>
                     {row.invoice ? (
@@ -422,7 +435,9 @@ function DebitTable({ title, rows, color }: { title?: string; rows: DebitRow[]; 
                         </Text>
                       </>
                     ) : color === 'red' ? (
-                      <Badge color="red">BRAK FAKTURY</Badge>
+                      <Badge color="red" style={{ overflow: 'visible' }}>
+                        BRAK FAKTURY
+                      </Badge>
                     ) : null}
                   </Table.Td>
                   <Table.Td>
@@ -436,6 +451,12 @@ function DebitTable({ title, rows, color }: { title?: string; rows: DebitRow[]; 
       )}
     </Stack>
   )
+}
+
+/** Tytuł przelewu z opisu operacji, a gdy go brak, sam opis. */
+function transferTitle(description: string) {
+  const title = description.match(/Tytuł:\s*(.+?)(?:\s+Kwota VAT:|\s+Ident\.:|\s+FV:|$)/)
+  return title ? `Tytuł: ${title[1]}` : description
 }
 
 function UnpaidTable({ rows }: { rows: UnpaidRow[] }) {
@@ -461,7 +482,7 @@ function UnpaidTable({ rows }: { rows: UnpaidRow[] }) {
       <Table.Tbody>
         {rows.map((row) => (
           <Table.Tr key={`${row.number}-${row.issue_date}`}>
-            <Table.Td>{formatDate(row.issue_date)}</Table.Td>
+            <Table.Td className="nowrap">{formatDate(row.issue_date)}</Table.Td>
             <Table.Td>{row.number}</Table.Td>
             <Table.Td>{row.seller}</Table.Td>
             <Table.Td ta="right" className="amount">

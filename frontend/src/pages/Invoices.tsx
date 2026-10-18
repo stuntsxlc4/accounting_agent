@@ -154,8 +154,10 @@ export function Invoices({ month, onMonthChange }: Props) {
                   <SortHeader label="Numer" field="number" sort={sort} onSort={toggleSort} />
                   <SortHeader label="Sprzedawca" field="seller" sort={sort} onSort={toggleSort} />
                   <SortHeader label="Brutto" field="gross" sort={sort} onSort={toggleSort} right />
-                  <Table.Th>Rodzaj</Table.Th>
-                  <Table.Th ta="center">PDF</Table.Th>
+                  <Table.Th w={110}>Rodzaj</Table.Th>
+                  <Table.Th ta="center" w={70}>
+                    PDF
+                  </Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -246,7 +248,7 @@ function SortHeader(props: {
 function InvoiceRow({ invoice, onOpen }: { invoice: InvoiceFile; onOpen: (name: string) => void }) {
   return (
     <Table.Tr>
-      <Table.Td>{formatDate(invoice.issue_date)}</Table.Td>
+      <Table.Td className="nowrap">{formatDate(invoice.issue_date)}</Table.Td>
       <Table.Td>{invoice.number}</Table.Td>
       <Table.Td>
         <Text size="sm">{invoice.seller}</Text>
@@ -259,7 +261,7 @@ function InvoiceRow({ invoice, onOpen }: { invoice: InvoiceFile; onOpen: (name: 
       </Table.Td>
       <Table.Td>
         {isCorrection(invoice.invoice_type) ? (
-          <Badge color="orange" variant="light">
+          <Badge color="orange" variant="light" style={{ overflow: 'visible' }}>
             korekta
           </Badge>
         ) : (

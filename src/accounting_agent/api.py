@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import asdict
@@ -40,6 +41,10 @@ from accounting_agent.services import (
 )
 
 TOKEN_HEADER = "X-App-Token"
+# Numer rachunku na początku danych kontrahenta w wyciągu, np. "67 1140 2004 ... Elipsa"
+# Sklep w opisie płatności kartą, np. "... PŁATNOŚĆ KARTĄ 384.50 PLN ORLEN STACJA NR 555 WARSZAWA"
+CARD_MERCHANT = re.compile(r"\d+[.,]\d{2} [A-Z]{3} (.+)$")
+ACCOUNT_PREFIX = re.compile(r"^((?:PL)?\d{2}(?: ?\d{4}){6}|PL\d{20,})\s*(.*)$")
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 log = logging.getLogger(__name__)
@@ -417,7 +422,8 @@ def _debit(debit: Debit) -> dict:
         "amount": float(debit.amount),
         "currency": debit.currency,
         "kind": debit.kind,
-        "description": f"{t.counterparty} | {t.text}" if t.counterparty else t.text,
+        **_counterparty(t.counterparty or _card_merchant(debit)),
+        "description": t.text,
         "invoice": {
             "number": invoice.number,
             "issue_date": invoice.issue_date.isoformat(),
@@ -429,6 +435,19 @@ def _debit(debit: Debit) -> dict:
         "method": debit.method,
         "note": debit.note,
     }
+
+
+def _card_merchant(debit: Debit) -> str:
+    found = CARD_MERCHANT.search(debit.transaction.text) if debit.kind == "karta" else None
+    return found.group(1) if found else ""
+
+
+def _counterparty(text: str) -> dict:
+    """Dane kontrahenta z wyciągu rozdzielone na numer rachunku i nazwę."""
+    found = ACCOUNT_PREFIX.match(text)
+    if found:
+        return {"account": found.group(1), "counterparty": found.group(2).lstrip("- ")}
+    return {"account": "", "counterparty": text}
 
 
 def _default_frontend_dir() -> Path | None:

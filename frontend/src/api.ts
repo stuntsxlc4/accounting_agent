@@ -138,6 +138,8 @@ export interface DebitRow {
   amount: number
   currency: string
   kind: string
+  counterparty: string
+  account: string
   description: string
   invoice: { number: string; issue_date: string; seller: string; gross: number } | null
   method: string
