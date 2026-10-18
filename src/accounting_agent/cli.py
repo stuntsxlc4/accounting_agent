@@ -23,8 +23,8 @@ from accounting_agent.matching import (
     UnpaidInvoice,
     classify,
     explain_unpaid,
-    is_correction,
     match,
+    settle_corrections,
     unpaid,
 )
 from accounting_agent.naming import invoice_filename, month_folder
@@ -130,7 +130,9 @@ def cmd_reconcile(args: argparse.Namespace) -> None:
             match(debits, invoices)
             not_found = unpaid(invoices, debits, date_from.date(), date_to.date())
             print(f"Sprawdzam sposób płatności faktur spoza wyciągów: {len(not_found)}")
-            not_paid = [_explain(client, session, invoice) for invoice in not_found]
+            not_paid = settle_corrections(
+                [_explain(client, session, invoice) for invoice in not_found]
+            )
         finally:
             client.close_session(session)
     report = folder / f"Porównanie_faktur_i_wyciągów_{folder_name.replace(' ', '_')}.xlsx"
@@ -156,10 +158,8 @@ def cmd_reconcile(args: argparse.Namespace) -> None:
 
 
 def _explain(client: KsefClient, session: Session, invoice: InvoiceRef) -> UnpaidInvoice:
-    if is_correction(invoice):
-        return explain_unpaid(invoice, None)
     xml = client.get_invoice_xml(session, invoice.ksef_number)
-    return explain_unpaid(invoice, parse_invoice(xml, invoice.ksef_number).payment)
+    return explain_unpaid(invoice, parse_invoice(xml, invoice.ksef_number))
 
 
 def _fetch_invoices(

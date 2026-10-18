@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from accounting_agent.invoice import Payment
+from accounting_agent.invoice import Invoice
 from accounting_agent.naming import short_company_name
 from accounting_agent.statements.models import Transaction
 
@@ -30,6 +30,7 @@ BY_AMOUNT = "tylko kwota – sprawdź"
 NOT_PAID = "brak płatności"
 OTHER_CARD = "zapłacona kartą spoza wyciągów"
 PAID_OTHERWISE = "zapłacona wg faktury"
+CORRECTED_TO_ZERO = "skorygowana do zera"
 CORRECTION = "korekta"
 
 # Faktura może być wystawiona do kilku dni po płatności kartą lub przedpłacie.
@@ -141,21 +142,29 @@ def match(debits: list[Debit], invoices: list[InvoiceRef]) -> None:
 class UnpaidInvoice:
     invoice: InvoiceRef
     status: str
-    payment: str = ""  # sposób płatności z faktury, np. "karta, zapłacono 08-08-2026"
+    details: str = ""  # np. "karta, zapłacono 08-08-2026" albo "koryguje 95/ZAL/26-08"
+    corrects: tuple[str, ...] = ()  # numery faktur, które koryguje ta korekta
 
 
 def is_correction(invoice: InvoiceRef) -> bool:
     return invoice.gross <= 0 or invoice.invoice_type.upper().startswith("KOR")
 
 
-def explain_unpaid(invoice: InvoiceRef, payment: Payment | None) -> UnpaidInvoice:
-    """Status faktury bez płatności na wyciągach, według danych o płatności z faktury.
+def explain_unpaid(invoice: InvoiceRef, parsed: Invoice) -> UnpaidInvoice:
+    """Status faktury bez płatności na wyciągach, według danych z faktury.
 
     Faktura opłacona kartą (np. paliwo), której nie ma na wyciągach, była zapłacona
     inną kartą niż ta, której wyciągi porównujemy.
     """
     if is_correction(invoice):
-        return UnpaidInvoice(invoice, CORRECTION)
+        details = ", ".join(
+            f"koryguje {' '.join(number.split())}" + (f" z {_day(issued)}" if issued else "")
+            for number, issued in parsed.corrected
+        )
+        corrects = tuple(number for number, _ in parsed.corrected)
+        return UnpaidInvoice(invoice, CORRECTION, details, corrects)
+
+    payment = parsed.payment
     if payment is None:
         return UnpaidInvoice(invoice, NOT_PAID, "brak danych o płatności na fakturze")
     details = [payment.form] if payment.form else []
@@ -171,6 +180,35 @@ def explain_unpaid(invoice: InvoiceRef, payment: Payment | None) -> UnpaidInvoic
     else:
         status = NOT_PAID
     return UnpaidInvoice(invoice, status, ", ".join(details))
+
+
+def settle_corrections(items: list[UnpaidInvoice]) -> list[UnpaidInvoice]:
+    """Faktura bez płatności, którą korekty z tego samego okresu zerują, nie wymaga zapłaty."""
+    corrections = [i for i in items if i.status == CORRECTION]
+    settled = []
+    for item in items:
+        number = _norm_number(item.invoice.number)
+        own = [
+            c
+            for c in corrections
+            if c.invoice.seller_nip == item.invoice.seller_nip
+            and number in {_norm_number(n) for n in c.corrects}
+        ]
+        if item.status == NOT_PAID and own:
+            if item.invoice.gross + sum(c.invoice.gross for c in own) == 0:
+                numbers = ", ".join(c.invoice.number for c in own)
+                item = UnpaidInvoice(
+                    item.invoice, CORRECTED_TO_ZERO, f"{item.details}; korekta: {numbers}"
+                )
+        settled.append(item)
+    return settled
+
+
+def _day(text: str) -> str:
+    try:
+        return f"{date.fromisoformat(text):%d-%m-%Y}"
+    except ValueError:
+        return text
 
 
 def unpaid(invoices: list[InvoiceRef], debits: list[Debit], date_from, date_to) -> list:

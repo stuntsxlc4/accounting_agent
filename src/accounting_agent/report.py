@@ -8,6 +8,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from accounting_agent.matching import (
+    CORRECTED_TO_ZERO,
     CORRECTION,
     EXPECTS_INVOICE,
     NOT_PAID,
@@ -33,6 +34,7 @@ UNPAID_GROUPS = [
     (NOT_PAID, MISSING_FILL),
     (OTHER_CARD, OTHER_CARD_FILL),
     (PAID_OTHERWISE, MATCHED_FILL),
+    (CORRECTED_TO_ZERO, NEUTRAL_FILL),
     (CORRECTION, NEUTRAL_FILL),
 ]
 
@@ -209,7 +211,7 @@ def _unpaid_sheet(ws, unpaid: list[UnpaidInvoice]) -> None:
         "Brutto",
         "Waluta",
         "Status",
-        "Płatność według faktury",
+        "Płatność według faktury / uwagi",
     ]
     _header_row(ws, 4, headers)
     row = 5
@@ -227,7 +229,7 @@ def _unpaid_sheet(ws, unpaid: list[UnpaidInvoice]) -> None:
                 invoice.gross,
                 invoice.currency,
                 item.status,
-                item.payment,
+                item.details,
             ]
             for col, value in enumerate(values, 1):
                 ws.cell(row=row, column=col, value=value).fill = fill
