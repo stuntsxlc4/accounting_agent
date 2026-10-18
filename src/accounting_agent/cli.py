@@ -16,24 +16,10 @@ from accounting_agent.credentials import (
 )
 from accounting_agent.invoice import parse_invoice
 from accounting_agent.ksef import KsefClient, KsefError, Session
-from accounting_agent.naming import invoice_filename
+from accounting_agent.naming import invoice_filename, month_folder
 from accounting_agent.pdf import render_invoice_pdf
 
 TIMEZONE = ZoneInfo("Europe/Warsaw")
-MONTH_NAMES = (
-    "styczeń",
-    "luty",
-    "marzec",
-    "kwiecień",
-    "maj",
-    "czerwiec",
-    "lipiec",
-    "sierpień",
-    "wrzesień",
-    "październik",
-    "listopad",
-    "grudzień",
-)
 
 
 def cmd_set_password(args: argparse.Namespace) -> None:
@@ -56,12 +42,12 @@ def cmd_login(args: argparse.Namespace) -> None:
 
 def cmd_download(args: argparse.Namespace) -> None:
     config = load_config()
-    if config.output_dir is None:
-        raise ConfigError("Brak OUTPUT_DIR w .env")
-    config.output_dir.mkdir(parents=True, exist_ok=True)
     month = parse_month(args.month) if args.month else _ask_month()
     date_from, date_to = _month_range(month)
-    print(f"Pobieram faktury zakupowe: {MONTH_NAMES[date_from.month - 1]} {date_from.year}")
+    folder_name = month_folder(date_from.year, date_from.month)
+    folder = config.output_dir / folder_name
+    folder.mkdir(parents=True, exist_ok=True)
+    print(f"Pobieram faktury zakupowe: {folder_name}")
 
     with KsefClient(config.ksef_env) as client:
         session = _authenticate(client, config)
@@ -76,7 +62,7 @@ def cmd_download(args: argparse.Namespace) -> None:
                     meta["seller"].get("name") or "",
                     meta["invoiceType"],
                 )
-                path = config.output_dir / name
+                path = folder / name
                 if path.exists():
                     print(f"  pominięto (już jest): {path.name}")
                     continue
@@ -86,9 +72,9 @@ def cmd_download(args: argparse.Namespace) -> None:
                 print(f"  zapisano: {path.name}")
         finally:
             client.close_session(session)
-    print(f"Zapisano {saved} nowych plików w {config.output_dir}")
+    print(f"Zapisano {saved} nowych plików w {folder}")
     if args.open_folder:
-        _open_folder(config.output_dir)
+        _open_folder(folder)
 
 
 def _authenticate(client: KsefClient, config: Config) -> Session:

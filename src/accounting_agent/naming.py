@@ -1,16 +1,36 @@
-"""Nazwy plików faktur, bezpieczne dla Windows i macOS.
+"""Nazwy plików i folderów faktur, bezpieczne dla Windows i macOS.
 
-Wzór: RRRR-MM-DD_INV numer_Sprzedawca.pdf (korekty: KOR zamiast INV).
+Plik:   DD-MM-RRRR_INV_numer_Sprzedawca.pdf, np. 10-08-2026_INV_53_07_2026_Shell.pdf
+        (korekty: KOR zamiast INV; poza datą wszędzie podkreślniki)
+Folder: miesiąc wystawienia, np. "Sierpień 2026"
 """
 
 import re
 from datetime import date
 
-FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-MAX_PART_LENGTH = 80
+SEPARATORS = re.compile(r'[\s<>:"/\\|?*\x00-\x1f]+')
+# Limity długości, żeby cała ścieżka zmieściła się w 260 znakach Windows.
+MAX_NUMBER_LENGTH = 40
+MAX_SELLER_LENGTH = 60
 
-# Słowa, którymi część wystawców poprzedza numer, np. "Faktura korekta 105/KOR/26".
-NUMBER_PREFIX = re.compile(r"^(?:(?:faktura|korekta|korygująca|vat)\s+)+", re.IGNORECASE)
+# Słowa, którymi część wystawców poprzedza numer, np. "Faktura korekta 105/KOR/26"
+# albo "INV 53/07/2026" – INV i tak dodajemy sami.
+NUMBER_PREFIX_WORDS = {"faktura", "korekta", "korygująca", "vat", "inv"}
+
+MONTH_FOLDERS = (
+    "Styczeń",
+    "Luty",
+    "Marzec",
+    "Kwiecień",
+    "Maj",
+    "Czerwiec",
+    "Lipiec",
+    "Sierpień",
+    "Wrzesień",
+    "Październik",
+    "Listopad",
+    "Grudzień",
+)
 
 LEGAL_FORMS = [
     r"prosta spółka akcyjna",
@@ -44,9 +64,20 @@ def invoice_filename(
     extension: str = "pdf",
 ) -> str:
     label = "KOR" if invoice_type.upper().startswith("KOR") else "INV"
-    number = _clean(NUMBER_PREFIX.sub("", number.strip()))
-    parts = [issue_date.isoformat(), f"{label} {number}", _clean(short_company_name(seller_name))]
+    tokens = [t for t in SEPARATORS.split(number) if t]
+    while len(tokens) > 1 and tokens[0].lower() in NUMBER_PREFIX_WORDS:
+        tokens.pop(0)
+    parts = [
+        f"{issue_date:%d-%m-%Y}",
+        label,
+        _underscored("_".join(tokens), MAX_NUMBER_LENGTH),
+        _underscored(short_company_name(seller_name), MAX_SELLER_LENGTH),
+    ]
     return "_".join(p for p in parts if p) + f".{extension}"
+
+
+def month_folder(year: int, month: int) -> str:
+    return f"{MONTH_FOLDERS[month - 1]} {year}"
 
 
 def short_company_name(name: str) -> str:
@@ -61,8 +92,6 @@ def short_company_name(name: str) -> str:
     return short or name
 
 
-def _clean(value: str) -> str:
-    value = value.replace('"', "")
-    value = FORBIDDEN_CHARS.sub("-", value)
-    value = " ".join(value.split())
-    return value[:MAX_PART_LENGTH].rstrip(" .")
+def _underscored(value: str, max_length: int) -> str:
+    value = SEPARATORS.sub("_", value.replace('"', ""))
+    return value[:max_length].strip("_.")

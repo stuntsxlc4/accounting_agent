@@ -1,4 +1,6 @@
 import os
+import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -6,6 +8,10 @@ from dotenv import load_dotenv
 
 KSEF_ENVS = ("test", "demo", "prod")
 NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
+
+# Ten Komputer > Obrazy > AAA Ludna 2 > AAA L2 Księgowość > Faktury ZAKUPOWE > <Miesiąc RRRR>
+INVOICE_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Faktury ZAKUPOWE")
+FOLDERID_PICTURES = uuid.UUID("33E28130-4E1E-4676-835A-98395C3BC3BB")
 
 
 class ConfigError(Exception):
@@ -18,7 +24,7 @@ class Config:
     nip: str
     cert_path: Path
     key_path: Path
-    output_dir: Path | None
+    output_dir: Path
 
 
 def load_config(env_file: Path | None = None) -> Config:
@@ -36,14 +42,31 @@ def load_config(env_file: Path | None = None) -> Config:
     if not _is_valid_nip(nip):
         raise ConfigError(f"Niepoprawny NIP: {nip}")
 
-    output_dir = os.getenv("OUTPUT_DIR", "").strip()
     return Config(
         ksef_env=ksef_env,
         nip=nip,
         cert_path=_existing_file(base, "KSEF_CERT_PATH"),
         key_path=_existing_file(base, "KSEF_KEY_PATH"),
-        output_dir=base / Path(output_dir).expanduser() if output_dir else None,
+        output_dir=pictures_dir().joinpath(*INVOICE_FOLDERS),
     )
+
+
+def pictures_dir() -> Path:
+    """Folder Obrazy użytkownika (Windows: także gdy przeniesiony do OneDrive)."""
+    if sys.platform == "win32":
+        import ctypes
+
+        guid = (ctypes.c_byte * 16).from_buffer_copy(FOLDERID_PICTURES.bytes_le)
+        path = ctypes.c_wchar_p()
+        result = ctypes.windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(guid), 0, None, ctypes.byref(path)
+        )
+        try:
+            if result == 0 and path.value:
+                return Path(path.value)
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(path)
+    return Path.home() / "Pictures"
 
 
 def _require(name: str) -> str:
