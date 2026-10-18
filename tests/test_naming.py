@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 
+from accounting_agent.formatting import bank_account
 from accounting_agent.naming import invoice_filename, month_folder, short_company_name
 from accounting_agent.services import parse_month
 
@@ -63,3 +64,15 @@ def test_month_folder():
 )
 def test_parse_month(text, expected):
     assert parse_month(text, today=date(2026, 10, 16)) == expected
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [
+        ("83105010121000009031278782", "83 1050 1012 1000 0090 3127 8782"),
+        ("PL83105010121000009031278782", "PL83 1050 1012 1000 0090 3127 8782"),
+        ("CH9100308308156508610", "CH9100308308156508610"),
+    ],
+)
+def test_bank_account(number, expected):
+    assert bank_account(number) == expected

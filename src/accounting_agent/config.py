@@ -3,6 +3,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -14,6 +15,8 @@ INVOICE_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Faktury ZAKUPOWE")
 # Wyciągi: Ten Komputer > Obrazy > AAA Ludna 2 > AAA L2 Księgowość > Wyciągi > <Miesiąc RRRR>
 STATEMENT_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Wyciągi")
 APP_NAME = "Faktury KSeF"
+# Daty i miesiące liczone są według czasu polskiego, niezależnie od ustawień komputera.
+TIMEZONE = ZoneInfo("Europe/Warsaw")
 FOLDERID_PICTURES = uuid.UUID("33E28130-4E1E-4676-835A-98395C3BC3BB")
 
 

@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from accounting_agent.formatting import bank_account
 from accounting_agent.matching import (
     CORRECTED_TO_ZERO,
     CORRECTION,
@@ -117,7 +118,7 @@ def _summary_sheet(ws, title, statements, by_account, unpaid, unreadable) -> Non
 
 def _bank_sheet(ws, sheet_name: str, debits: list[Debit], statements: list[Statement]) -> None:
     own = [s for s in statements if account_label(s.bank, s.account, statements) == sheet_name]
-    ws["A1"] = f"{sheet_name} – rachunek {_account(own[0].account)} ({own[0].currency})"
+    ws["A1"] = f"{sheet_name} – rachunek {bank_account(own[0].account)} ({own[0].currency})"
     ws["A1"].font = TITLE
     periods = sorted(p for s in own for p in (s.period_from, s.period_to) if p)
     if periods:
@@ -257,9 +258,3 @@ def account_label(bank: str, account: str, statements: list[Statement]) -> str:
     """Nazwa banku, z końcówką numeru rachunku, gdy bank ma kilka rachunków."""
     accounts = {s.account for s in statements if s.bank == bank}
     return f"{bank} {account[-4:]}" if len(accounts) > 1 else bank
-
-
-def _account(number: str) -> str:
-    if len(number) == 26 and number.isdigit():
-        return f"{number[:2]} " + " ".join(number[i : i + 4] for i in range(2, 26, 4))
-    return number

@@ -9,9 +9,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from accounting_agent.config import Config, ConfigError, app_data_dir
+from accounting_agent.config import TIMEZONE, Config, ConfigError, app_data_dir
 from accounting_agent.credentials import get_key_password, load_private_key
 from accounting_agent.invoice import parse_invoice
 from accounting_agent.ksef import KsefClient, Session
@@ -31,7 +30,6 @@ from accounting_agent.report import write_report
 from accounting_agent.statements.models import Statement, StatementError
 from accounting_agent.statements.reader import read_statement
 
-TIMEZONE = ZoneInfo("Europe/Warsaw")
 # Płatności dotyczą też starszych faktur (w sierpniu 2026 zapłacono fakturę z lutego).
 INVOICE_LOOKBACK_MONTHS = 12
 # KSeF przyjmuje zakres dat do 100 dni w jednym zapytaniu, czyli najwyżej 3 pełne miesiące.

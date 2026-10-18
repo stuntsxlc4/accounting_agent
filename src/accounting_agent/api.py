@@ -19,14 +19,13 @@ from pydantic import BaseModel
 from send2trash import send2trash
 
 from accounting_agent import storage
-from accounting_agent.config import Config, ConfigError, load_config
+from accounting_agent.config import TIMEZONE, Config, ConfigError, load_config
 from accounting_agent.jobs import EXPECTED_ERRORS, JobRunner
 from accounting_agent.ksef import KsefClient
 from accounting_agent.matching import EXPECTS_INVOICE, NOT_PAID, Debit
 from accounting_agent.naming import month_folder
 from accounting_agent.report import account_label
 from accounting_agent.services import (
-    TIMEZONE,
     Progress,
     ReconcileResult,
     authenticate,

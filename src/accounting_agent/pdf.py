@@ -8,6 +8,7 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
+from accounting_agent.formatting import bank_account
 from accounting_agent.invoice import Invoice, Line, Party
 
 FONT_CANDIDATES = {
@@ -206,7 +207,7 @@ def _payment(pdf: FPDF, inv: Invoice) -> None:
     for due in payment.due_dates:
         rows.append(f"Termin płatności: {due:%d.%m.%Y}")
     for account, bank in payment.bank_accounts:
-        rows.append(f"Rachunek: {_account(account)}" + (f" ({bank})" if bank else ""))
+        rows.append(f"Rachunek: {bank_account(account)}" + (f" ({bank})" if bank else ""))
     if not rows:
         return
     _section_title(pdf, "Płatność")
@@ -264,11 +265,3 @@ def _num(value: Decimal | None, quantity: bool = False) -> str:
 
 def _rate(rate: str) -> str:
     return f"{rate}%" if rate.isdigit() else rate
-
-
-def _account(number: str) -> str:
-    country, digits = (number[:2], number[2:]) if number[:2].isalpha() else ("", number)
-    if len(digits) == 26 and digits.isdigit():
-        groups = " ".join(digits[i : i + 4] for i in range(2, 26, 4))
-        return f"{country}{digits[:2]} {groups}"
-    return number

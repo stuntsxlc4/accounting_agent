@@ -8,11 +8,9 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from accounting_agent.config import app_data_dir
+from accounting_agent.config import TIMEZONE, app_data_dir
 
-TIMEZONE = ZoneInfo("Europe/Warsaw")
 HISTORY_LIMIT = 200
 LOG_FILE_BYTES = 1_000_000
 LOG_FILE_COUNT = 5
