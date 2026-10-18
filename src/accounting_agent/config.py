@@ -11,6 +11,8 @@ NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 
 # Ten Komputer > Obrazy > AAA Ludna 2 > AAA L2 Księgowość > Faktury ZAKUPOWE > <Miesiąc RRRR>
 INVOICE_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Faktury ZAKUPOWE")
+# Wyciągi: Ten Komputer > Obrazy > AAA Ludna 2 > AAA L2 Księgowość > Wyciągi > <Miesiąc RRRR>
+STATEMENT_FOLDERS = ("AAA Ludna 2", "AAA L2 Księgowość", "Wyciągi")
 FOLDERID_PICTURES = uuid.UUID("33E28130-4E1E-4676-835A-98395C3BC3BB")
 
 
@@ -25,6 +27,7 @@ class Config:
     cert_path: Path
     key_path: Path
     output_dir: Path
+    statements_dir: Path
 
 
 def load_config(env_file: Path | None = None) -> Config:
@@ -48,6 +51,7 @@ def load_config(env_file: Path | None = None) -> Config:
         cert_path=_existing_file(base, "KSEF_CERT_PATH"),
         key_path=_existing_file(base, "KSEF_KEY_PATH"),
         output_dir=pictures_dir().joinpath(*INVOICE_FOLDERS),
+        statements_dir=pictures_dir().joinpath(*STATEMENT_FOLDERS),
     )
 
 
