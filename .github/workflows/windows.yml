@@ -1,6 +1,7 @@
 # Testy na Windowsie, paczka aplikacji, jej samosprawdzenie i instalator.
-# Instalator jest do pobrania z zakładki Actions (Artifacts); po wypchnięciu tagu wersji,
-# np. v0.1.0, trafia też do Releases.
+# Instalator jest zapisywany (na 7 dni, w zakładce Actions) tylko przy tagu wersji, np. v0.1.0,
+# i wtedy trafia też do Releases, albo przy ręcznym uruchomieniu (Run workflow). Zwykły push
+# tylko sprawdza, że wszystko się buduje, żeby nie zapełniać miejsca na pliki na GitHubie.
 name: Windows
 
 on:
@@ -73,10 +74,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
 
       - uses: actions/upload-artifact@v7
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         with:
           name: Faktury-KSeF-Setup
           path: dist/Faktury-KSeF-Setup-*.exe
-          retention-days: 30
+          retention-days: 7
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
