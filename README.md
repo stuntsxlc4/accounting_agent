@@ -1,145 +1,91 @@
-# Accounting Agent
+![Accounting Agent — from KSeF to a reconciled month](./assets/readme/hero.svg)
 
-Desktop application that automates monthly bookkeeping chores: it downloads purchase
-invoices from **KSeF** (the Polish National e-Invoicing System), saves them as PDF files
-and reconciles them against **bank statements**, producing an Excel report of what was
-paid, how, and what is missing.
+<h1 align="center">Accounting Agent</h1>
 
-The application runs locally — documents, certificates and passwords never leave the
-computer, except for the requests sent directly to KSeF.
+<p align="center">
+  <strong>Download the invoices. Check the bank. Know what is paid.</strong><br />
+  Fetches a month's purchase invoices from KSeF, files them as PDFs and reconciles them with bank statements.
+</p>
 
----
+<p align="center">
+  <img alt="Status: in development" src="https://img.shields.io/badge/status-in_development-3B8EEA?style=flat-square" />
+  <img alt="Python 3.14" src="https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" />
+  <img alt="API: FastAPI" src="https://img.shields.io/badge/API-FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" />
+  <img alt="UI: React 19" src="https://img.shields.io/badge/UI-React_19-149ECA?style=flat-square&amp;logo=react&amp;logoColor=white" />
+  <img alt="KSeF API 2.0" src="https://img.shields.io/badge/KSeF-API_2.0-1FB89A?style=flat-square" />
+  <img alt="Platforms: macOS and Windows" src="https://img.shields.io/badge/platform-macOS_%7C_Windows-6B7A90?style=flat-square" />
+</p>
 
-## Features
+<p align="center">
+  <a href="#why">Why</a> ·
+  <a href="#flow">How it works</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#quick-start">Quick start</a>
+</p>
 
-### Invoices from KSeF
-- Authenticates to KSeF API 2.0 with a KSeF certificate (XAdES signature).
-- Downloads all purchase invoices issued in a selected month.
-- Renders every invoice as a readable PDF: parties, line items, VAT summary, payment
-  details, corrections.
-- Saves files in a monthly folder structure with standardised file names.
-- Skips invoices that were already downloaded and keeps a local copy of the invoice data,
-  so repeated runs stay within KSeF rate limits.
+<a id="why"></a>
+## Why Accounting Agent
 
-### Bank statement reconciliation
-- Reads PDF statements from several banks and verifies every statement against its
-  balances before using it.
-- Classifies debits: transfers, card payments, bank fees, deposits, taxes, salaries and more.
-- Matches payments to invoices by invoice number and tax ID, by amount and counterparty,
-  or by amount alone (flagged for review).
-- Explains invoices without a matching payment using the payment data on the invoice itself.
-- Produces an Excel report per bank account: matched debits, debits without an invoice and
-  invoices without a payment.
+| **01 / DOWNLOAD** | **02 / FILE** | **03 / RECONCILE** | **04 / CLOSE** |
+| :---: | :---: | :---: | :---: |
+| Every purchase invoice of the month, straight from KSeF. | A readable PDF for each invoice, with a consistent file name. | Bank statements read, balance-checked and matched with invoices. | One Excel report: what was paid, how, and what needs attention. |
 
-### Desktop application
-- Native window with a dashboard, invoice list, statement reconciliation and settings.
-- Background jobs with progress, saved results and operation history.
-- Clear error messages and a log file for diagnostics.
+Built for a single company and a non-technical user. Everything runs locally — the only outside connection is the one to KSeF.
 
----
+> [!IMPORTANT]
+> **In development.** Works on real data for Alior, Erste and UniCredit statements. A setup wizard and a Windows installer are not available yet.
 
+<a id="flow"></a>
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph Desktop app
-        UI["React UI<br/>(native window)"] -->|local HTTP| API["FastAPI"]
-    end
-    API --> Services["Service layer"]
-    CLI["Command line"] --> Services
-    Services --> KSeF["KSeF API 2.0"]
-    Services --> Statements["Bank statement parsers"]
-    Services --> Matching["Invoice matching"]
-    Services --> Output["PDF invoices<br/>Excel report"]
-```
+![Monthly flow: sign in, invoices, statements, matching, register, report](./assets/readme/flow.svg)
 
-The desktop app and the command line share the same service layer.
+- **Matching** goes from the strongest evidence to the weakest: invoice number and tax ID, amount and counterparty, amount alone (marked for review).
+- **Payment register** keeps each invoice's status across months — a payment found next month updates the earlier report automatically.
+- **Never guessed:** statements whose balances do not add up are rejected, each invoice is matched once, and cash payments are marked only by the user.
 
----
+<a id="architecture"></a>
+## Architecture
 
-## Getting started
+![Architecture: desktop window, local API, service layer and adapters](./assets/readme/architecture.svg)
 
-### Requirements
-- [uv](https://docs.astral.sh/uv/) (installs Python and all Python dependencies)
-- [Node.js](https://nodejs.org/) (to build the user interface)
-- A KSeF authentication certificate for a person authorised to view the company's invoices
+| Area | Technology |
+| --- | --- |
+| Backend | Python 3.14, uv, FastAPI |
+| KSeF | httpx, signxml (XAdES), cryptography, lxml |
+| Documents | fpdf2, pdfplumber, openpyxl |
+| Desktop | pywebview, keyring |
+| Frontend | React 19, TypeScript, Vite, Mantine |
 
-### Setup
+<a id="quick-start"></a>
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) and a KSeF authentication certificate. The same commands work on macOS and in Windows PowerShell.
 
 ```bash
 uv sync
 npm --prefix frontend install
 npm --prefix frontend run build
+
+uv run ksef ustaw-haslo    # save the certificate key password
+uv run ksef zaloguj        # test the KSeF sign-in
+uv run faktury-ksef        # start the application
 ```
 
-Configure the company tax ID and the certificate in a local `.env` file, then store the
-certificate key password in the operating system's credential store:
+Configuration lives in a local `.env` file: `KSEF_ENV` (`test`, `demo` or `prod`), `KSEF_NIP`, `KSEF_CERT_PATH` and `KSEF_KEY_PATH`.
 
-```bash
-uv run ksef ustaw-haslo
-uv run ksef zaloguj
-```
-
-### Run
-
-```bash
-uv run faktury-ksef
-```
-
-### Command line
-
-| Command | Description |
-|---|---|
-| `uv run ksef pobierz <month>` | download purchase invoices of a month as PDF |
-| `uv run ksef porownaj <month>` | reconcile bank statements of a month with invoices |
-| `uv run ksef zaloguj` | test KSeF authentication |
-| `uv run ksef ustaw-haslo` | save the certificate key password |
-
----
-
-## Development
-
-```bash
-# backend with auto-reload
-uv run uvicorn accounting_agent.api:dev_app --factory --port 8765 --reload --reload-dir src
-
-# user interface with hot reload
-npm --prefix frontend run dev
-```
-
-Quality checks:
-
-```bash
-uv run pytest
-uv run ruff check .
-npm --prefix frontend run lint
-npm --prefix frontend run build
-```
-
-### Tech stack
-
-| Area | Technology |
-|---|---|
-| Backend | Python, uv, FastAPI |
-| KSeF | httpx, signxml (XAdES), cryptography, lxml |
-| Documents | fpdf2, pdfplumber, openpyxl |
-| Desktop | pywebview |
-| Frontend | React, TypeScript, Vite, Mantine |
-
----
+| Purpose | Command |
+| --- | --- |
+| Download invoices of a month | `uv run ksef pobierz [month]` |
+| Reconcile statements of a month | `uv run ksef porownaj [month]` |
+| Tests and lint | `uv run pytest` · `uv run ruff check .` · `npm --prefix frontend run lint` |
 
 ## Security
 
-- Certificates, keys and local configuration are never committed.
-- The certificate key password is kept in the operating system's credential store.
-- Only signatures are sent to KSeF; the private key never leaves the computer.
+- The private key never leaves the computer; its password is kept in the system credential store.
 - The local API accepts requests only from the application window.
-
----
+- Certificates, statements, invoices and reports never enter the repository.
 
 ## Roadmap
 
-- First-run setup wizard
-- Windows installer
-- More bank statement formats
-- AI-assisted features: cost categorisation, questions about expenses, anomaly detection
+First-run setup wizard · Windows installer · UBS statements · AI-assisted cost analysis

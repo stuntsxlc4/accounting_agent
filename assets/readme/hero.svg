@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">Accounting Agent</title>
+  <desc id="hero-desc">Dark navy banner with an invoice mark and the statement From KSeF to a reconciled month, with three principles: local by design, verified not guessed, built for KSeF 2.0.</desc>
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 240) rotate(25) scale(1200 760)">
+      <stop stop-color="#16325A"/>
+      <stop offset="0.5" stop-color="#0B1830"/>
+      <stop offset="1" stop-color="#060C19"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="210" y1="150" x2="430" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7FC3FF"/>
+      <stop offset="0.5" stop-color="#3B8EEA"/>
+      <stop offset="1" stop-color="#1FB89A"/>
+    </linearGradient>
+    <linearGradient id="headline" x1="560" y1="200" x2="1240" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#B9D9FF"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1600" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B8EEA" stop-opacity="0.5"/>
+      <stop offset="0.5" stop-color="#3B8EEA" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#1FB89A" stop-opacity="0.45"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop stop-color="#3B8EEA" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#3B8EEA" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#FFFFFF" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="560" rx="28" fill="url(#bg)"/>
+  <rect width="1600" height="560" rx="28" fill="url(#grid)"/>
+  <rect x="1" y="1" width="1598" height="558" rx="27" fill="none" stroke="url(#edge)" stroke-width="2"/>
+
+  <circle cx="320" cy="280" r="230" fill="url(#glow)"/>
+  <g transform="translate(220 140)">
+    <path d="M24 0H150L208 58V262C208 275 197 286 184 286H24C11 286 0 275 0 262V24C0 11 11 0 24 0Z" fill="#0E2140" stroke="url(#mark)" stroke-width="6"/>
+    <path d="M150 0V46C150 53 155 58 162 58H208" fill="none" stroke="url(#mark)" stroke-width="6" stroke-linejoin="round"/>
+    <rect x="38" y="92" width="120" height="12" rx="6" fill="#3B8EEA" fill-opacity="0.75"/>
+    <rect x="38" y="122" width="132" height="12" rx="6" fill="#3B8EEA" fill-opacity="0.5"/>
+    <rect x="38" y="152" width="88" height="12" rx="6" fill="#3B8EEA" fill-opacity="0.35"/>
+    <circle cx="150" cy="226" r="40" fill="#0B1830" stroke="url(#mark)" stroke-width="6"/>
+    <path d="M132 227L145 240L170 213" fill="none" stroke="#1FB89A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">
+    <text x="560" y="168" fill="#7FC3FF" font-size="26" font-weight="600" letter-spacing="6">ACCOUNTING AGENT</text>
+    <text x="560" y="250" fill="url(#headline)" font-size="70" font-weight="700">From KSeF to a</text>
+    <text x="560" y="330" fill="url(#headline)" font-size="70" font-weight="700">reconciled month.</text>
+    <text x="560" y="386" fill="#9DB4D3" font-size="26">Invoices downloaded, filed and matched with bank payments — automatically.</text>
+
+    <g font-size="21" font-weight="600" fill="#D8E6F7">
+      <rect x="560" y="430" width="250" height="52" rx="26" fill="#3B8EEA" fill-opacity="0.12" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="685" y="463" text-anchor="middle">Local by design</text>
+      <rect x="830" y="430" width="300" height="52" rx="26" fill="#3B8EEA" fill-opacity="0.12" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="980" y="463" text-anchor="middle">Verified, never guessed</text>
+      <rect x="1150" y="430" width="270" height="52" rx="26" fill="#1FB89A" fill-opacity="0.12" stroke="#1FB89A" stroke-opacity="0.5"/>
+      <text x="1285" y="463" text-anchor="middle">Built for KSeF 2.0</text>
+    </g>
+  </g>
+</svg>

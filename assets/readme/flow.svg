@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="620" viewBox="0 0 1600 620" role="img" aria-labelledby="flow-title flow-desc">
+  <title id="flow-title">Accounting Agent monthly flow</title>
+  <desc id="flow-desc">Six steps: authenticate to KSeF with a certificate, download and file invoices as PDF, read and balance-check bank statements, match payments to invoices, update the payment register across months, and produce the Excel report. Unreadable statements are rejected and unmatched debits are listed for manual review.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#060C19"/>
+      <stop offset="0.55" stop-color="#0A1529"/>
+      <stop offset="1" stop-color="#060C19"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#12233F"/>
+      <stop offset="1" stop-color="#0C182D"/>
+    </linearGradient>
+    <linearGradient id="doneCard" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#0F2E2C"/>
+      <stop offset="1" stop-color="#0B1C1F"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#3B8EEA"/>
+      <stop offset="1" stop-color="#1FB89A"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#3B8EEA"/>
+    </marker>
+    <marker id="arrowDone" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#1FB89A"/>
+    </marker>
+    <marker id="arrowWarn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#F2A33A"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="620" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1598" height="618" rx="27" fill="none" stroke="#3B8EEA" stroke-opacity="0.25" stroke-width="2"/>
+
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">
+    <text x="64" y="78" fill="#7FC3FF" font-size="22" font-weight="600" letter-spacing="5">MONTHLY FLOW</text>
+    <text x="64" y="120" fill="#FFFFFF" font-size="38" font-weight="700">One month, end to end — every number traceable</text>
+
+    <!-- kroki -->
+    <g>
+      <rect x="64" y="180" width="220" height="200" rx="18" fill="url(#card)" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="88" y="222" fill="#7FC3FF" font-size="18" font-weight="700">01</text>
+      <text x="88" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Sign in</text>
+      <text x="88" y="292" fill="#9DB4D3" font-size="18">KSeF certificate,</text>
+      <text x="88" y="316" fill="#9DB4D3" font-size="18">XAdES signature,</text>
+      <text x="88" y="340" fill="#9DB4D3" font-size="18">no manual login</text>
+
+      <rect x="318" y="180" width="220" height="200" rx="18" fill="url(#card)" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="342" y="222" fill="#7FC3FF" font-size="18" font-weight="700">02</text>
+      <text x="342" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Invoices</text>
+      <text x="342" y="292" fill="#9DB4D3" font-size="18">month from KSeF,</text>
+      <text x="342" y="316" fill="#9DB4D3" font-size="18">readable PDFs,</text>
+      <text x="342" y="340" fill="#9DB4D3" font-size="18">standard names</text>
+
+      <rect x="572" y="180" width="220" height="200" rx="18" fill="url(#card)" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="596" y="222" fill="#7FC3FF" font-size="18" font-weight="700">03</text>
+      <text x="596" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Statements</text>
+      <text x="596" y="292" fill="#9DB4D3" font-size="18">bank PDFs parsed,</text>
+      <text x="596" y="316" fill="#9DB4D3" font-size="18">every balance</text>
+      <text x="596" y="340" fill="#9DB4D3" font-size="18">checked</text>
+
+      <rect x="826" y="180" width="220" height="200" rx="18" fill="url(#card)" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="850" y="222" fill="#7FC3FF" font-size="18" font-weight="700">04</text>
+      <text x="850" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Matching</text>
+      <text x="850" y="292" fill="#9DB4D3" font-size="18">invoice no. + tax ID,</text>
+      <text x="850" y="316" fill="#9DB4D3" font-size="18">amount + name,</text>
+      <text x="850" y="340" fill="#9DB4D3" font-size="18">amount (review)</text>
+
+      <rect x="1080" y="180" width="220" height="200" rx="18" fill="url(#card)" stroke="#3B8EEA" stroke-opacity="0.45"/>
+      <text x="1104" y="222" fill="#7FC3FF" font-size="18" font-weight="700">05</text>
+      <text x="1104" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Register</text>
+      <text x="1104" y="292" fill="#9DB4D3" font-size="18">payment status</text>
+      <text x="1104" y="316" fill="#9DB4D3" font-size="18">kept across</text>
+      <text x="1104" y="340" fill="#9DB4D3" font-size="18">months</text>
+
+      <rect x="1334" y="180" width="202" height="200" rx="18" fill="url(#doneCard)" stroke="#1FB89A" stroke-opacity="0.7"/>
+      <text x="1358" y="222" fill="#5FE0C2" font-size="18" font-weight="700">06</text>
+      <text x="1358" y="258" fill="#FFFFFF" font-size="24" font-weight="700">Report</text>
+      <text x="1358" y="292" fill="#A9D9CE" font-size="18">Excel per bank</text>
+      <text x="1358" y="316" fill="#A9D9CE" font-size="18">and per invoice,</text>
+      <text x="1358" y="340" fill="#A9D9CE" font-size="18">always current</text>
+    </g>
+
+    <g stroke="#3B8EEA" stroke-width="3" fill="none" marker-end="url(#arrow)">
+      <path d="M286 280H314"/>
+      <path d="M540 280H568"/>
+      <path d="M794 280H822"/>
+      <path d="M1048 280H1076"/>
+      <path d="M1302 280H1330"/>
+    </g>
+
+    <!-- odgałęzienia -->
+    <g stroke="#F2A33A" stroke-width="3" fill="none" marker-end="url(#arrowWarn)" stroke-dasharray="8 7">
+      <path d="M682 382V452"/>
+      <path d="M936 382V452"/>
+    </g>
+    <rect x="572" y="458" width="220" height="92" rx="14" fill="#2A1E0C" stroke="#F2A33A" stroke-opacity="0.6"/>
+    <text x="592" y="494" fill="#FFD08A" font-size="19" font-weight="700">Balance mismatch</text>
+    <text x="592" y="524" fill="#E8C28E" font-size="17">statement rejected</text>
+    <rect x="826" y="458" width="220" height="92" rx="14" fill="#2A1E0C" stroke="#F2A33A" stroke-opacity="0.6"/>
+    <text x="846" y="494" fill="#FFD08A" font-size="19" font-weight="700">No invoice found</text>
+    <text x="846" y="524" fill="#E8C28E" font-size="17">listed for review</text>
+
+    <path d="M1190 382V452" stroke="#1FB89A" stroke-width="3" fill="none" stroke-dasharray="8 7" marker-end="url(#arrowDone)"/>
+    <rect x="1080" y="458" width="456" height="92" rx="14" fill="#0E2A28" stroke="#1FB89A" stroke-opacity="0.6"/>
+    <text x="1100" y="494" fill="#8FF0D6" font-size="19" font-weight="700">Paid next month?</text>
+    <text x="1100" y="524" fill="#A9D9CE" font-size="17">the earlier month's report updates itself</text>
+  </g>
+</svg>
