@@ -93,12 +93,14 @@ def sign_xades(document: etree._Element, cert_pem: str, key: PrivateKeyTypes) ->
 
 
 class KsefClient:
-    def __init__(self, env: str):
+    def __init__(self, env: str, transport: httpx.BaseTransport | None = None):
+        """transport: podstawiony serwer w testach; aplikacja łączy się z prawdziwym KSeF."""
         self.env = env
         self._http = httpx.Client(
             base_url=BASE_URLS[env],
             headers={"X-Error-Format": "problem-details", "Accept": "application/json"},
             timeout=30.0,
+            transport=transport,
         )
         self._last_invoice_download = 0.0
 
