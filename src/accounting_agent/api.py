@@ -7,18 +7,26 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from cryptography import x509
 from cryptography.x509.oid import NameOID
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from send2trash import send2trash
 
-from accounting_agent import storage
-from accounting_agent.config import TIMEZONE, Config, ConfigError, load_config
+from accounting_agent import __version__, storage
+from accounting_agent.config import (
+    TIMEZONE,
+    Config,
+    ConfigError,
+    load_config,
+    normalize_nip,
+    save_settings,
+)
+from accounting_agent.credentials import CredentialsError, set_key_password, verify_certificate
 from accounting_agent.jobs import EXPECTED_ERRORS, JobRunner
 from accounting_agent.ksef import KsefClient
 from accounting_agent.naming import month_folder
@@ -92,7 +100,7 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
     def status() -> dict:
         now = datetime.now(TIMEZONE)
         previous = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-        result = {"previous_month": previous}
+        result = {"previous_month": previous, "version": __version__}
         try:
             config = load_config()
         except ConfigError as e:
@@ -106,6 +114,25 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
             "invoices_dir": str(config.output_dir),
             "statements_dir": str(config.statements_dir),
         }
+
+    @app.post("/api/setup")
+    async def setup(
+        nip: Annotated[str, Form()],
+        password: Annotated[str, Form()],
+        certificate: UploadFile,
+        key: UploadFile,
+    ) -> dict:
+        """Kreator pierwszego uruchomienia: NIP, pliki certyfikatu KSeF i hasło do klucza."""
+        key_pem = await key.read()
+        try:
+            nip = normalize_nip(nip)
+            certificate_pem = verify_certificate(await certificate.read(), key_pem, password)
+        except (ConfigError, CredentialsError) as e:
+            raise HTTPException(400, str(e)) from e
+        set_key_password(password)
+        save_settings(nip, certificate_pem, key_pem)
+        log.info("Zapisano ustawienia z kreatora, NIP %s", nip)
+        return status()
 
     @app.get("/api/overview")
     def overview(month: str) -> dict:

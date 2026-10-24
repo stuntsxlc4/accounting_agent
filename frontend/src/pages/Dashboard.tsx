@@ -50,26 +50,9 @@ export function Dashboard({ status, go }: Props) {
   const monthLabel = dayjs(`${month}-01`).format('MMMM YYYY')
 
   useEffect(() => {
-    if (!status.configured) return
     api.overview(month).then(setOverview).catch(() => setOverview(null))
     api.history().then(setHistory).catch(() => setHistory([]))
-  }, [month, status.configured])
-
-  if (!status.configured) {
-    return (
-      <>
-        <PageHeader title="Pulpit" />
-        <Alert color="orange" icon={<IconAlertTriangle />} title="Aplikacja nie jest jeszcze skonfigurowana">
-          <Stack>
-            <Text size="sm">{status.error}</Text>
-            <Group>
-              <Button onClick={() => go('settings')}>Przejdź do ustawień</Button>
-            </Group>
-          </Stack>
-        </Alert>
-      </>
-    )
-  }
+  }, [month])
 
   const cert = status.certificate!
   const certColor = cert.days_left < 30 ? 'red' : cert.days_left < 90 ? 'orange' : 'green'
@@ -80,7 +63,17 @@ export function Dashboard({ status, go }: Props) {
 
       {cert.days_left < 30 ? (
         <Alert color="red" icon={<IconCertificate />} title="Certyfikat KSeF wkrótce wygaśnie" mb="lg">
-          Certyfikat jest ważny do {formatDate(cert.valid_to)}. Wygeneruj nowy w Aplikacji Podatnika KSeF.
+          <Stack gap="xs">
+            <Text size="sm">
+              Certyfikat jest ważny do {formatDate(cert.valid_to)}. Wygeneruj nowy w Aplikacji Podatnika KSeF i wskaż
+              go w Ustawieniach.
+            </Text>
+            <Group>
+              <Button size="xs" variant="light" color="red" onClick={() => go('settings')}>
+                Przejdź do ustawień
+              </Button>
+            </Group>
+          </Stack>
         </Alert>
       ) : null}
 

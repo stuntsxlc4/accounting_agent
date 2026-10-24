@@ -28,6 +28,10 @@ certs/
 *.p12
 *.pfx
 
+# Paczka aplikacji i instalator
+build/
+dist/
+
 # Testy
 .coverage
 .coverage.*

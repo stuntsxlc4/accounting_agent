@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import uuid
@@ -18,6 +19,10 @@ APP_NAME = "Faktury KSeF"
 # Daty i miesiące liczone są według czasu polskiego, niezależnie od ustawień komputera.
 TIMEZONE = ZoneInfo("Europe/Warsaw")
 FOLDERID_PICTURES = uuid.UUID("33E28130-4E1E-4676-835A-98395C3BC3BB")
+# Ustawienia z kreatora pierwszego uruchomienia, w danych aplikacji
+SETTINGS_FILE = "ustawienia.json"
+CERT_FILE = "certyfikat.crt"
+KEY_FILE = "klucz.key"
 
 
 class ConfigError(Exception):
@@ -35,28 +40,36 @@ class Config:
 
 
 def load_config(env_file: Path | None = None) -> Config:
+    """Ustawienia zapisane przez kreator w danych aplikacji.
+
+    W trybie deweloperskim (uruchomienie z kodu, nie z paczki) pierwszeństwo ma plik .env
+    w bieżącym folderze.
+    """
     env_file = env_file or Path.cwd() / ".env"
-    if not env_file.is_file():
-        raise ConfigError(f"Brak pliku konfiguracji: {env_file}")
-    load_dotenv(env_file)
-    base = env_file.parent
+    if env_file.is_file() and not getattr(sys, "frozen", False):
+        return _from_env(env_file)
+    return _from_settings()
 
-    ksef_env = _require("KSEF_ENV")
-    if ksef_env not in KSEF_ENVS:
-        raise ConfigError(f"KSEF_ENV musi być jednym z: {', '.join(KSEF_ENVS)}")
 
-    nip = _require("KSEF_NIP").replace("-", "").replace(" ", "")
+def save_settings(nip: str, certificate_pem: bytes, key_pem: bytes) -> None:
+    """Zapisuje ustawienia z kreatora: NIP i kopię plików certyfikatu."""
+    folder = certificate_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    _write_atomic(folder / CERT_FILE, certificate_pem)
+    _write_atomic(folder / KEY_FILE, key_pem)
+    settings = {"ksef_env": "prod", "nip": normalize_nip(nip)}
+    _write_atomic(app_data_dir() / SETTINGS_FILE, json.dumps(settings, indent=1).encode("utf-8"))
+
+
+def normalize_nip(text: str) -> str:
+    nip = text.replace("-", "").replace(" ", "").strip()
     if not _is_valid_nip(nip):
-        raise ConfigError(f"Niepoprawny NIP: {nip}")
+        raise ConfigError(f"Niepoprawny NIP: {text}")
+    return nip
 
-    return Config(
-        ksef_env=ksef_env,
-        nip=nip,
-        cert_path=_existing_file(base, "KSEF_CERT_PATH"),
-        key_path=_existing_file(base, "KSEF_KEY_PATH"),
-        output_dir=pictures_dir().joinpath(*INVOICE_FOLDERS),
-        statements_dir=pictures_dir().joinpath(*STATEMENT_FOLDERS),
-    )
+
+def certificate_dir() -> Path:
+    return app_data_dir() / "certyfikat"
 
 
 def app_data_dir() -> Path:
@@ -86,6 +99,50 @@ def pictures_dir() -> Path:
     return Path.home() / "Pictures"
 
 
+def _from_env(env_file: Path) -> Config:
+    load_dotenv(env_file)
+    base = env_file.parent
+    return _config(
+        _require("KSEF_ENV"),
+        _require("KSEF_NIP"),
+        _existing_file(base, "KSEF_CERT_PATH"),
+        _existing_file(base, "KSEF_KEY_PATH"),
+    )
+
+
+def _from_settings() -> Config:
+    path = app_data_dir() / SETTINGS_FILE
+    if not path.is_file():
+        raise ConfigError("Aplikacja nie jest jeszcze skonfigurowana")
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"Nie można odczytać ustawień aplikacji: {path}") from e
+    folder = certificate_dir()
+    for name in (CERT_FILE, KEY_FILE):
+        if not (folder / name).is_file():
+            raise ConfigError("Brak plików certyfikatu KSeF. Wskaż je ponownie w Ustawieniach.")
+    return _config(
+        settings.get("ksef_env", "prod"),
+        settings.get("nip", ""),
+        folder / CERT_FILE,
+        folder / KEY_FILE,
+    )
+
+
+def _config(ksef_env: str, nip: str, cert_path: Path, key_path: Path) -> Config:
+    if ksef_env not in KSEF_ENVS:
+        raise ConfigError(f"KSEF_ENV musi być jednym z: {', '.join(KSEF_ENVS)}")
+    return Config(
+        ksef_env=ksef_env,
+        nip=normalize_nip(nip),
+        cert_path=cert_path,
+        key_path=key_path,
+        output_dir=pictures_dir().joinpath(*INVOICE_FOLDERS),
+        statements_dir=pictures_dir().joinpath(*STATEMENT_FOLDERS),
+    )
+
+
 def _require(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
@@ -98,6 +155,12 @@ def _existing_file(base: Path, name: str) -> Path:
     if not path.is_file():
         raise ConfigError(f"{name}: plik nie istnieje: {path}")
     return path
+
+
+def _write_atomic(path: Path, content: bytes) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(content)
+    os.replace(tmp, path)
 
 
 def _is_valid_nip(nip: str) -> bool:

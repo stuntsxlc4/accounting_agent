@@ -51,6 +51,7 @@ export interface Status {
   invoices_dir?: string
   statements_dir?: string
   previous_month: string
+  version: string
 }
 
 export interface InvoiceFile {
@@ -195,6 +196,14 @@ export type OpenTarget = 'invoices_folder' | 'statements_folder' | 'invoice' | '
 
 export const api = {
   status: () => request<Status>('/api/status'),
+  setup: (nip: string, password: string, certificate: File, key: File) => {
+    const form = new FormData()
+    form.append('nip', nip)
+    form.append('password', password)
+    form.append('certificate', certificate)
+    form.append('key', key)
+    return request<Status>('/api/setup', { method: 'POST', body: form })
+  },
   invoices: (month: string) => request<MonthInvoices>(`/api/invoices?month=${month}`),
   download: (month: string) => post<{ job_id: string }>('/api/invoices/download', { month }),
   statements: (month: string) => request<MonthStatements>(`/api/statements?month=${month}`),

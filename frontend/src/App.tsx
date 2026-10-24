@@ -12,6 +12,7 @@ import { api, type Status } from './api'
 import { Dashboard } from './pages/Dashboard'
 import { Invoices } from './pages/Invoices'
 import { Settings } from './pages/Settings'
+import { Setup } from './pages/Setup'
 import { Statements } from './pages/Statements'
 
 export type Page = 'dashboard' | 'invoices' | 'statements' | 'settings'
@@ -97,6 +98,7 @@ export default function App() {
               description={item.description}
               leftSection={<item.icon size={20} stroke={1.6} />}
               onClick={() => setPage(item.page)}
+              disabled={status !== null && !status.configured}
               styles={{ root: { borderRadius: 'var(--mantine-radius-md)' } }}
             />
           ))}
@@ -121,14 +123,16 @@ export default function App() {
           <Center h="70%">
             <Loader />
           </Center>
-        ) : status && month ? (
+        ) : !status.configured ? (
+          <Setup status={status} onDone={loadStatus} />
+        ) : (
           <>
             {page === 'dashboard' && <Dashboard status={status} go={go} />}
             {page === 'invoices' && <Invoices key={month} month={month} onMonthChange={setMonth} />}
             {page === 'statements' && <Statements key={month} month={month} onMonthChange={setMonth} />}
             {page === 'settings' && <Settings status={status} onChanged={loadStatus} />}
           </>
-        ) : null}
+        )}
       </AppShell.Main>
     </AppShell>
   )
