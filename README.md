@@ -33,7 +33,7 @@
 Built for a single company and a non-technical user. Everything runs locally — the only outside connection is the one to KSeF.
 
 > [!IMPORTANT]
-> **In development.** Works on real data for Alior, Erste and UniCredit statements. A setup wizard and a Windows installer are not available yet.
+> **Version 0.1.0.** Works on real data for Alior, Erste and UniCredit statements. The Windows installer is not code-signed yet, so Windows asks for confirmation before the first install.
 
 <a id="flow"></a>
 ## How it works
@@ -56,9 +56,16 @@ Built for a single company and a non-technical user. Everything runs locally —
 | Documents | fpdf2, pdfplumber, openpyxl |
 | Desktop | pywebview, keyring |
 | Frontend | React 19, TypeScript, Vite, Mantine |
+| Packaging | PyInstaller, Inno Setup, GitHub Actions |
 
 <a id="quick-start"></a>
 ## Quick start
+
+### Windows
+
+Download `Faktury-KSeF-Setup-<version>.exe` from [Releases](../../releases) and run it — no administrator rights needed. On first start, a setup wizard asks for the company tax ID, the KSeF certificate files and the key password, then tests the sign-in.
+
+### From source
 
 Requires [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) and a KSeF authentication certificate. The same commands work on macOS and in Windows PowerShell.
 
@@ -72,13 +79,14 @@ uv run ksef zaloguj        # test the KSeF sign-in
 uv run faktury-ksef        # start the application
 ```
 
-Configuration lives in a local `.env` file: `KSEF_ENV` (`test`, `demo` or `prod`), `KSEF_NIP`, `KSEF_CERT_PATH` and `KSEF_KEY_PATH`.
+When running from source, configuration can come from a local `.env` file instead of the wizard: `KSEF_ENV` (`test`, `demo` or `prod`), `KSEF_NIP`, `KSEF_CERT_PATH` and `KSEF_KEY_PATH`.
 
 | Purpose | Command |
 | --- | --- |
 | Download invoices of a month | `uv run ksef pobierz [month]` |
 | Reconcile statements of a month | `uv run ksef porownaj [month]` |
 | Tests and lint | `uv run pytest` · `uv run ruff check .` · `npm --prefix frontend run lint` |
+| Release | push a tag `vX.Y.Z` — the installer is built, checked on Windows and published |
 
 ## Security
 
@@ -88,4 +96,4 @@ Configuration lives in a local `.env` file: `KSEF_ENV` (`test`, `demo` or `prod`
 
 ## Roadmap
 
-First-run setup wizard · Windows installer · UBS statements · AI-assisted cost analysis
+UBS statements · AI-assisted cost analysis
