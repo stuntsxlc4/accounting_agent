@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import asdict
@@ -22,28 +21,32 @@ from accounting_agent import storage
 from accounting_agent.config import TIMEZONE, Config, ConfigError, load_config
 from accounting_agent.jobs import EXPECTED_ERRORS, JobRunner
 from accounting_agent.ksef import KsefClient
-from accounting_agent.matching import EXPECTS_INVOICE, NOT_PAID, Debit
 from accounting_agent.naming import month_folder
-from accounting_agent.report import account_label
+from accounting_agent.payments import (
+    CARD_PAID,
+    CASH,
+    CONFLICT,
+    TO_EXPLAIN,
+    TRANSFER_PAID,
+    UNPAID,
+    InvoiceStatus,
+)
 from accounting_agent.services import (
     Progress,
-    ReconcileResult,
     authenticate,
     download_invoices,
     invoices_fetched_at,
     invoices_folder,
     month_invoices,
     month_range,
+    month_statuses,
     open_path,
     reconcile,
+    set_cash,
     statements_folder,
 )
 
 TOKEN_HEADER = "X-App-Token"
-# Numer rachunku na początku danych kontrahenta w wyciągu, np. "67 1140 2004 ... Elipsa"
-# Sklep w opisie płatności kartą, np. "... PŁATNOŚĆ KARTĄ 384.50 PLN ORLEN STACJA NR 555 WARSZAWA"
-CARD_MERCHANT = re.compile(r"\d+[.,]\d{2} [A-Z]{3} (.+)$")
-ACCOUNT_PREFIX = re.compile(r"^((?:PL)?\d{2}(?: ?\d{4}){6}|PL\d{20,})\s*(.*)$")
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 log = logging.getLogger(__name__)
@@ -51,6 +54,12 @@ log = logging.getLogger(__name__)
 
 class MonthRequest(BaseModel):
     month: str
+
+
+class CashRequest(BaseModel):
+    month: str
+    ksef_number: str
+    cash: bool
 
 
 class OpenRequest(BaseModel):
@@ -115,6 +124,8 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
             },
             "statements": len(_statement_files(statements_folder(config, month))),
             "reconcile": _reconcile_summary(last) if last else None,
+            "payments": _payments_summary(month_statuses(month)),
+            "to_explain": _to_explain(),
         }
 
     @app.get("/api/history")
@@ -125,12 +136,16 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
     def invoices(month: str) -> dict:
         config = _config()
         fetched_at = invoices_fetched_at(month)
+        statuses = {s.invoice.ksef_number: _status_row(s) for s in month_statuses(month)}
         return {
             "month": month,
             "label": _label(month),
             "folder": str(invoices_folder(config, month)),
             "fetched_at": fetched_at.isoformat(timespec="seconds") if fetched_at else None,
-            "invoices": [asdict(i) for i in month_invoices(config, month)],
+            "invoices": [
+                {**asdict(i), "payment": statuses.get(i.ksef_number)}
+                for i in month_invoices(config, month)
+            ],
         }
 
     @app.post("/api/invoices/download")
@@ -223,22 +238,42 @@ def create_app(token: str | None, frontend_dir: Path | None = None) -> FastAPI:
         _ensure_idle(jobs)
 
         def work(progress: Progress) -> dict:
-            data = _reconcile_json(reconcile(config, request.month, None, progress))
-            record = storage.save_reconcile(request.month, data)
+            result = reconcile(config, request.month, None, progress)
+            record = storage.last_reconcile(request.month)
             summary = _reconcile_summary(record)
+            later = f", zaktualizowano też: {', '.join(map(_label, result.updated_months))}"
             storage.add_history(
                 "reconcile",
                 request.month,
                 f"Z fakturą: {summary['matched']}, bez faktury: {summary['missing']}, "
-                f"faktur bez płatności: {summary['unpaid_open']}",
+                f"faktur niezapłaconych: {summary['unpaid']}"
+                + (later if result.updated_months else ""),
             )
-            return record
+            return {**record, "updated_months": result.updated_months}
 
         return _submit(jobs, "reconcile", request.month, work)
 
     @app.get("/api/reconcile/last")
     def last_reconcile(month: str) -> dict:
         return {"record": storage.last_reconcile(month)}
+
+    @app.get("/api/payments")
+    def month_payments(month: str) -> dict:
+        reconciled = storage.reconciled_months()
+        return {
+            "month": month,
+            "label": _label(month),
+            "reconciled": month in reconciled,
+            "last_reconciled": reconciled[-1] if reconciled else None,
+            "invoices": [_status_row(s) for s in month_statuses(month)],
+        }
+
+    @app.post("/api/payments/cash")
+    def mark_cash(request: CashRequest) -> dict:
+        """Ręczne oznaczenie faktury jako zapłaconej gotówką (z własnych środków)."""
+        set_cash(_config(), request.month, request.ksef_number, request.cash)
+        log.info("Gotówka %s: %s", "oznaczona" if request.cash else "cofnięta", request.ksef_number)
+        return month_payments(request.month)
 
     @app.post("/api/ksef/test")
     def test_connection() -> dict:
@@ -353,87 +388,55 @@ def _certificate(config: Config) -> dict:
 
 def _reconcile_summary(record: dict) -> dict:
     result = record["result"]
+    statuses = _payments_summary(month_statuses(record["month"]))
     return {
         "created_at": record["created_at"],
         "matched": sum(len(b["matched"]) for b in result["banks"]),
         "missing": sum(len(b["missing"]) for b in result["banks"]),
-        "unpaid_open": sum(1 for u in result["unpaid"] if u["status"] == NOT_PAID),
+        "unpaid": statuses["unpaid"] + statuses["to_explain"],
         "unreadable": len(result["unreadable"]),
     }
 
 
-def _reconcile_json(result: ReconcileResult) -> dict:
-    banks: dict[str, list[Debit]] = {}
-    for debit in result.debits:
-        banks.setdefault(account_label(debit.bank, debit.account, result.statements), []).append(
-            debit
-        )
+def _payments_summary(statuses: list[InvoiceStatus]) -> dict:
+    count = {s: sum(1 for x in statuses if x.status == s) for s in {x.status for x in statuses}}
     return {
-        "report": result.report.name,
-        "statements": len(result.statements),
-        "unreadable": result.unreadable,
-        "invoice_count": result.invoice_count,
-        "banks": [
-            {
-                "name": name,
-                "matched": [_debit(d) for d in debits if d.kind in EXPECTS_INVOICE and d.invoice],
-                "missing": [
-                    _debit(d) for d in debits if d.kind in EXPECTS_INVOICE and not d.invoice
-                ],
-                "other": [_debit(d) for d in debits if d.kind not in EXPECTS_INVOICE],
-            }
-            for name, debits in sorted(banks.items())
-        ],
-        "unpaid": [
-            {
-                "issue_date": u.invoice.issue_date.isoformat(),
-                "number": u.invoice.number,
-                "seller": u.invoice.seller_name,
-                "gross": float(u.invoice.gross),
-                "currency": u.invoice.currency,
-                "status": u.status,
-                "details": u.details,
-            }
-            for u in sorted(result.unpaid, key=lambda u: u.invoice.issue_date)
-        ],
+        "paid": count.get(TRANSFER_PAID, 0) + count.get(CARD_PAID, 0),
+        "cash": count.get(CASH, 0),
+        "unpaid": count.get(UNPAID, 0),
+        "to_explain": count.get(TO_EXPLAIN, 0) + count.get(CONFLICT, 0),
     }
 
 
-def _debit(debit: Debit) -> dict:
-    t = debit.transaction
-    invoice = debit.invoice
+def _to_explain() -> list[dict]:
+    """Porównane miesiące z fakturami do wyjaśnienia (dla Pulpitu)."""
+    result = []
+    for month in storage.reconciled_months():
+        count = _payments_summary(month_statuses(month))["to_explain"]
+        if count:
+            result.append({"month": month, "label": _label(month), "count": count})
+    return result
+
+
+def _status_row(status: InvoiceStatus) -> dict:
+    invoice = status.invoice
     return {
-        "booking_date": t.booking_date.isoformat(),
-        "operation_date": t.operation_date.isoformat() if t.operation_date else None,
-        "amount": float(debit.amount),
-        "currency": debit.currency,
-        "kind": debit.kind,
-        **_counterparty(t.counterparty or _card_merchant(debit)),
-        "description": t.text,
-        "invoice": {
-            "number": invoice.number,
-            "issue_date": invoice.issue_date.isoformat(),
-            "seller": invoice.seller_name,
-            "gross": float(invoice.gross),
-        }
-        if invoice
-        else None,
-        "method": debit.method,
-        "note": debit.note,
+        "ksef_number": invoice.ksef_number,
+        "issue_date": invoice.issue_date.isoformat(),
+        "number": invoice.number,
+        "seller": invoice.seller_name,
+        "seller_nip": invoice.seller_nip,
+        "gross": float(invoice.gross),
+        "currency": invoice.currency,
+        "status": status.status,
+        "details": status.details,
+        "method": status.method,
+        "paid_date": status.paid_date,
+        "bank": status.bank,
+        "statement_month": status.statement_month,
+        "paid_later": status.paid_later,
+        "cash": status.cash,
     }
-
-
-def _card_merchant(debit: Debit) -> str:
-    found = CARD_MERCHANT.search(debit.transaction.text) if debit.kind == "karta" else None
-    return found.group(1) if found else ""
-
-
-def _counterparty(text: str) -> dict:
-    """Dane kontrahenta z wyciągu rozdzielone na numer rachunku i nazwę."""
-    found = ACCOUNT_PREFIX.match(text)
-    if found:
-        return {"account": found.group(1), "counterparty": found.group(2).lstrip("- ")}
-    return {"account": "", "counterparty": text}
 
 
 def _default_frontend_dir() -> Path | None:

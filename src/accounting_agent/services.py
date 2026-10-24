@@ -10,24 +10,17 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from accounting_agent import payments, record, storage
 from accounting_agent.config import TIMEZONE, Config, ConfigError, app_data_dir
 from accounting_agent.credentials import get_key_password, load_private_key
 from accounting_agent.invoice import parse_invoice
 from accounting_agent.ksef import KsefClient, Session
-from accounting_agent.matching import (
-    Debit,
-    InvoiceRef,
-    UnpaidInvoice,
-    classify,
-    explain_unpaid,
-    match,
-    settle_corrections,
-    unpaid,
-)
+from accounting_agent.matching import Debit, InvoiceRef, classify, match
 from accounting_agent.naming import invoice_filename, month_folder
+from accounting_agent.payments import InvoiceStatus
 from accounting_agent.pdf import render_invoice_pdf
 from accounting_agent.report import write_report
-from accounting_agent.statements.models import Statement, StatementError
+from accounting_agent.statements.models import StatementError
 from accounting_agent.statements.reader import read_statement
 
 # Płatności dotyczą też starszych faktur (w sierpniu 2026 zapłacono fakturę z lutego).
@@ -73,11 +66,10 @@ class DownloadResult:
 class ReconcileResult:
     folder: Path
     report: Path
-    statements: list[Statement]
-    unreadable: list[str]
-    debits: list[Debit]
-    unpaid: list[UnpaidInvoice]
-    invoice_count: int
+    record: dict
+    statuses: list[InvoiceStatus]
+    # Wcześniejsze miesiące, których faktury zostały opłacone na wyciągach tego miesiąca
+    updated_months: list[str]
 
 
 def invoices_folder(config: Config, month: str) -> Path:
@@ -159,7 +151,11 @@ def invoices_fetched_at(month: str) -> datetime | None:
 def reconcile(
     config: Config, month: str, folder: Path | None = None, progress: Progress = no_progress
 ) -> ReconcileResult:
-    date_from, date_to = month_range(month)
+    """Porównuje wyciągi miesiąca z fakturami i aktualizuje rejestr płatności.
+
+    Płatności dopasowywane są także do niezapłaconych faktur z wcześniejszych miesięcy;
+    zestawienia tych miesięcy są wtedy przeliczane.
+    """
     folder = folder or statements_folder(config, month)
     pdfs = sorted(p for p in folder.glob("*") if p.suffix.lower() == ".pdf")
     if not pdfs:
@@ -180,6 +176,12 @@ def reconcile(
         if t.is_debit
     ]
     months = [_shift_month(month, -i) for i in reversed(range(INVOICE_LOOKBACK_MONTHS))]
+    recent = {month, _shift_month(month, -1)}
+
+    register = payments.load()
+    # Ponowne porównanie tego samego miesiąca zastępuje jego wcześniejsze dopasowania.
+    changed = payments.clear_statement_month(register, month)
+
     progress("Logowanie do KSeF…", None, None)
     with KsefClient(config.ksef_env) as client:
         session = authenticate(client, config)
@@ -188,24 +190,83 @@ def reconcile(
                 InvoiceRef.from_metadata(meta)
                 for meta in _invoice_metadata(client, session, months, progress)
             ]
-            match(debits, invoices)
-            not_found = unpaid(invoices, debits, date_from.date(), date_to.date())
-            explained = []
-            for done, invoice in enumerate(not_found, 1):
-                progress(f"Sposób płatności: {invoice.number}", done, len(not_found))
+            paid_before = payments.bank_paid(register)
+            match(debits, [i for i in invoices if i.ksef_number not in paid_before])
+            for debit in debits:
+                if debit.invoice:
+                    payments.record_payment(register, debit, month)
+                    changed.add(debit.invoice.ksef_number)
+
+            paid = payments.bank_paid(register)
+            to_read = [
+                i for i in invoices if _invoice_month(i) in recent and i.ksef_number not in paid
+            ]
+            for done, invoice in enumerate(to_read, 1):
+                progress(f"Dane płatności z faktury: {invoice.number}", done, len(to_read))
                 xml = invoice_xml(client, session, invoice.ksef_number)
-                explained.append(explain_unpaid(invoice, parse_invoice(xml, invoice.ksef_number)))
-            not_paid = settle_corrections(explained)
+                payments.remember_invoice(
+                    register, invoice, parse_invoice(xml, invoice.ksef_number)
+                )
         finally:
             client.close_session(session)
+    payments.save(register)
 
-    name = month_folder(date_from.year, date_from.month)
+    start, _ = month_range(month)
+    name = month_folder(start.year, start.month)
     report = folder / f"Porównanie_faktur_i_wyciągów_{name.replace(' ', '_')}.xlsx"
+    result = record.build(statements, debits, unreadable, len(invoices), report.name)
+    storage.save_reconcile(month, result)
+
     progress("Zapis zestawienia Excel…", None, None)
-    write_report(
-        report, f"Porównanie faktur z wyciągami – {name}", statements, debits, not_paid, unreadable
+    write_report(report, _report_title(month), result, month_statuses(month))
+    updated = sorted({_invoice_month(i) for i in invoices if i.ksef_number in changed} - {month})
+    for earlier in updated:
+        write_month_report(config, earlier)
+    return ReconcileResult(folder, report, result, month_statuses(month), updated)
+
+
+def month_statuses(month: str) -> list[InvoiceStatus]:
+    """Status płatności faktur wystawionych w miesiącu, według rejestru płatności."""
+    cached = _load_month(month)
+    if cached is None:
+        return []
+    invoices = [InvoiceRef.from_metadata(meta) for meta in cached[1]]
+    reconciled = storage.reconciled_months()
+    return payments.statuses(invoices, payments.load(), reconciled[-1] if reconciled else None)
+
+
+def set_cash(config: Config, month: str, ksef_number: str, cash: bool) -> list[InvoiceStatus]:
+    """Ręczne oznaczenie faktury jako zapłaconej gotówką (z własnych środków) albo cofnięcie."""
+    statuses = month_statuses(month)
+    if not any(s.invoice.ksef_number == ksef_number for s in statuses):
+        raise ConfigError("Nie znaleziono tej faktury w miesiącu")
+    register = payments.load()
+    payments.set_cash(
+        register, ksef_number, cash, datetime.now(TIMEZONE).isoformat(timespec="seconds")
     )
-    return ReconcileResult(folder, report, statements, unreadable, debits, not_paid, len(invoices))
+    payments.save(register)
+    write_month_report(config, month)
+    return month_statuses(month)
+
+
+def write_month_report(config: Config, month: str) -> Path | None:
+    """Przelicza zestawienie Excel miesiąca, jeśli porównanie było już wykonane."""
+    saved = storage.last_reconcile(month)
+    folder = statements_folder(config, month)
+    if not saved or "accounts" not in saved["result"] or not folder.is_dir():
+        return None
+    path = folder / saved["result"]["report"]
+    write_report(path, _report_title(month), saved["result"], month_statuses(month))
+    return path
+
+
+def _report_title(month: str) -> str:
+    start, _ = month_range(month)
+    return f"Porównanie faktur z wyciągami – {month_folder(start.year, start.month)}"
+
+
+def _invoice_month(invoice: InvoiceRef) -> str:
+    return invoice.issue_date.strftime("%Y-%m")
 
 
 def authenticate(client: KsefClient, config: Config) -> Session:

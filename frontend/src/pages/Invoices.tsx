@@ -31,6 +31,7 @@ import { JobError, JobProgress } from '../components/JobProgress'
 import { TableSkeleton } from '../components/Loading'
 import { MonthSelect } from '../components/MonthSelect'
 import { PathLabel } from '../components/PathLabel'
+import { CashAction, PaymentBadge } from '../components/Payments'
 import { formatDate, formatDateTime, formatMoney, isCorrection } from '../format'
 import { useJob } from '../useJob'
 import { PageHeader } from './PageHeader'
@@ -40,13 +41,16 @@ interface Props {
   onMonthChange: (month: string) => void
 }
 
+const UNPAID = ['niezapłacona', 'do wyjaśnienia', 'sprzeczność']
+
 type SortKey = 'issue_date' | 'number' | 'seller' | 'gross'
-type Filter = 'all' | 'invoices' | 'corrections' | 'missing'
+type Filter = 'all' | 'invoices' | 'corrections' | 'unpaid' | 'missing'
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'Wszystkie' },
   { value: 'invoices', label: 'Faktury' },
   { value: 'corrections', label: 'Korekty' },
+  { value: 'unpaid', label: 'Niezapłacone' },
   { value: 'missing', label: 'Bez PDF' },
 ]
 
@@ -146,7 +150,7 @@ export function Invoices({ month, onMonthChange }: Props) {
             />
             <SegmentedControl value={filter} onChange={(v) => setFilter(v as Filter)} data={FILTERS} />
           </Group>
-          <Table.ScrollContainer minWidth={760}>
+          <Table.ScrollContainer minWidth={980}>
             <Table striped highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
               <Table.Thead>
                 <Table.Tr>
@@ -155,6 +159,7 @@ export function Invoices({ month, onMonthChange }: Props) {
                   <SortHeader label="Sprzedawca" field="seller" sort={sort} onSort={toggleSort} />
                   <SortHeader label="Brutto" field="gross" sort={sort} onSort={toggleSort} right />
                   <Table.Th w={110}>Rodzaj</Table.Th>
+                  <Table.Th w={200}>Płatność</Table.Th>
                   <Table.Th ta="center" w={70}>
                     PDF
                   </Table.Th>
@@ -162,11 +167,12 @@ export function Invoices({ month, onMonthChange }: Props) {
               </Table.Thead>
               <Table.Tbody>
                 {visible.map((invoice) => (
-                  <InvoiceRow key={invoice.ksef_number} invoice={invoice} onOpen={open} />
+                  <InvoiceRow key={invoice.ksef_number} invoice={invoice} month={month} onOpen={open}
+                    onPaymentChanged={load} />
                 ))}
                 {visible.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={6}>
+                    <Table.Td colSpan={7}>
                       <Text ta="center" c="dimmed" py="md">
                         Brak faktur spełniających kryteria.
                       </Text>
@@ -182,7 +188,7 @@ export function Invoices({ month, onMonthChange }: Props) {
                   <Table.Th ta="right" className="amount">
                     {formatMoney(total)}
                   </Table.Th>
-                  <Table.Th colSpan={2}>
+                  <Table.Th colSpan={3}>
                     <Text size="xs" c="dimmed">
                       suma bez korekt
                     </Text>
@@ -211,6 +217,7 @@ function filterAndSort(
     if (filter === 'invoices' && isCorrection(i.invoice_type)) return false
     if (filter === 'corrections' && !isCorrection(i.invoice_type)) return false
     if (filter === 'missing' && i.downloaded) return false
+    if (filter === 'unpaid' && !UNPAID.includes(i.payment?.status ?? '')) return false
     return !needle || [i.seller, i.number, i.seller_nip].some((v) => v.toLowerCase().includes(needle))
   })
   const direction = sort.desc ? -1 : 1
@@ -245,7 +252,17 @@ function SortHeader(props: {
   )
 }
 
-function InvoiceRow({ invoice, onOpen }: { invoice: InvoiceFile; onOpen: (name: string) => void }) {
+function InvoiceRow({
+  invoice,
+  month,
+  onOpen,
+  onPaymentChanged,
+}: {
+  invoice: InvoiceFile
+  month: string
+  onOpen: (name: string) => void
+  onPaymentChanged: () => void
+}) {
   return (
     <Table.Tr>
       <Table.Td className="nowrap">{formatDate(invoice.issue_date)}</Table.Td>
@@ -269,6 +286,14 @@ function InvoiceRow({ invoice, onOpen }: { invoice: InvoiceFile; onOpen: (name: 
             {invoice.invoice_type.toUpperCase()}
           </Badge>
         )}
+      </Table.Td>
+      <Table.Td>
+        {invoice.payment ? (
+          <Group gap={6} align="flex-start" wrap="nowrap">
+            <PaymentBadge row={invoice.payment} />
+            <CashAction row={invoice.payment} month={month} onChanged={onPaymentChanged} />
+          </Group>
+        ) : null}
       </Table.Td>
       <Table.Td ta="center">
         {invoice.downloaded ? (

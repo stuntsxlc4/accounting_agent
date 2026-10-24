@@ -5,15 +5,10 @@ from accounting_agent.matching import (
     BY_AMOUNT,
     BY_AMOUNT_AND_NAME,
     BY_NUMBER,
-    CORRECTED_TO_ZERO,
-    CORRECTION,
-    NOT_PAID,
     Debit,
     InvoiceRef,
-    UnpaidInvoice,
     classify,
     match,
-    settle_corrections,
 )
 from accounting_agent.statements.models import Transaction
 
@@ -38,6 +33,11 @@ def test_classify():
     assert classify(debit("PRZELEW ELIXIR - ZUS", "1").transaction) == "ZUS"
     assert classify(debit("Wynagrodzenie za 08.2026", "1").transaction) == "wynagrodzenie"
     assert classify(debit("SP PRZELEW NA RACHUNKI", "1").transaction) == "przelew"
+    for own in (
+        "Przekazanie środków na Rachunek Własny",
+        "Przelew Własny na Rachunek firmowy UniCredit",
+    ):
+        assert classify(debit(own, "1").transaction) == "przelew własny"
 
 
 def test_match_by_number_amount_and_name_amount_only():
@@ -68,15 +68,13 @@ def test_invoice_matched_only_once():
     assert [first.invoice is not None, second.invoice is not None].count(True) == 1
 
 
-def test_settle_corrections_to_zero():
-    original = UnpaidInvoice(
-        invoice("Faktura 95/ZAL/26-08", "224.24", nip="7010714667"), NOT_PAID, "przelew"
+def test_card_merchant_skips_exchange_rate():
+    from accounting_agent.record import debit_row
+
+    card = debit(
+        "TRANSAKCJA KARTĄ VB DEBIT PŁATNOŚĆ KARTĄ 12.00 EUR 1 EUR=4.4782 PLN RATSKELLER PASSAU",
+        "53.74",
     )
-    correction = UnpaidInvoice(
-        invoice("Faktura korekta 109/KOR/26-08", "-224.24", nip="7010714667"),
-        CORRECTION,
-        corrects=("Faktura  95/ZAL/26-08",),
-    )
-    settled = settle_corrections([original, correction])
-    assert settled[0].status == CORRECTED_TO_ZERO
-    assert settled[1].status == CORRECTION
+    assert debit_row(card)["counterparty"] == "RATSKELLER PASSAU"
+    local = debit("TRANSAKCJA KARTĄ VB DEBIT PŁATNOŚĆ KARTĄ 82.94 PLN CASTORAMA WARSZAWA", "82.94")
+    assert debit_row(local)["counterparty"] == "CASTORAMA WARSZAWA"

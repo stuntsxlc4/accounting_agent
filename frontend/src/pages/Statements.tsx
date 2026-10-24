@@ -29,6 +29,7 @@ import {
   IconTrash,
   IconUpload,
 } from '@tabler/icons-react'
+import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import {
   ApiError,
@@ -36,14 +37,15 @@ import {
   errorMessage,
   type DebitRow,
   type Job,
+  type MonthPayments,
   type MonthStatements,
   type ReconcileRecord,
-  type UnpaidRow,
   type UploadResult,
 } from '../api'
 import { JobError, JobProgress } from '../components/JobProgress'
 import { CardSkeleton } from '../components/Loading'
 import { MonthSelect } from '../components/MonthSelect'
+import { PaymentsTable } from '../components/Payments'
 import { PathLabel } from '../components/PathLabel'
 import { formatDate, formatDateTime, formatMoney, formatSize } from '../format'
 import { useJob } from '../useJob'
@@ -54,17 +56,10 @@ interface Props {
   onMonthChange: (month: string) => void
 }
 
-const UNPAID_COLORS: Record<string, string> = {
-  'brak płatności': 'red',
-  'zapłacona kartą spoza wyciągów': 'yellow',
-  'zapłacona wg faktury': 'green',
-  'skorygowana do zera': 'gray',
-  korekta: 'gray',
-}
-
 export function Statements({ month, onMonthChange }: Props) {
   const [data, setData] = useState<MonthStatements | null>(null)
   const [record, setRecord] = useState<ReconcileRecord | null>(null)
+  const [payments, setPayments] = useState<MonthPayments | null>(null)
   const [uploading, setUploading] = useState(false)
 
   const load = useCallback(() => {
@@ -76,6 +71,10 @@ export function Statements({ month, onMonthChange }: Props) {
       .lastReconcile(month)
       .then((r) => setRecord(r.record))
       .catch(() => setRecord(null))
+    api
+      .payments(month)
+      .then(setPayments)
+      .catch(() => setPayments(null))
   }, [month])
 
   const onDone = useCallback(
@@ -218,7 +217,12 @@ export function Statements({ month, onMonthChange }: Props) {
       </Stack>
 
       {record && !job.running ? (
-        <Results record={record} onOpenReport={() => open('report', record.result.report)} />
+        <Results
+          record={record}
+          payments={payments}
+          onPaymentsChanged={setPayments}
+          onOpenReport={() => open('report', record.result.report)}
+        />
       ) : null}
     </>
   )
@@ -252,11 +256,22 @@ function confirmReplace(conflicts: string[], onConfirm: () => void) {
   })
 }
 
-function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenReport: () => void }) {
+function Results({
+  record,
+  payments,
+  onPaymentsChanged,
+  onOpenReport,
+}: {
+  record: ReconcileRecord
+  payments: MonthPayments | null
+  onPaymentsChanged: (data: MonthPayments) => void
+  onOpenReport: () => void
+}) {
   const result = record.result
   const matched = result.banks.reduce((n, b) => n + b.matched.length, 0)
   const missing = result.banks.reduce((n, b) => n + b.missing.length, 0)
-  const unpaidOpen = result.unpaid.filter((u) => u.status === 'brak płatności').length
+  const invoices = payments?.invoices ?? []
+  const unpaid = invoices.filter((i) => ['niezapłacona', 'do wyjaśnienia', 'sprzeczność'].includes(i.status)).length
 
   return (
     <Stack mt="lg" gap="lg">
@@ -274,6 +289,14 @@ function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenRepo
         </Button>
       </Group>
 
+      {record.updated_months?.length ? (
+        <Alert color="blue" icon={<IconCircleCheck />} title="Zaktualizowano wcześniejsze miesiące">
+          Płatności z tych wyciągów opłaciły faktury z:{' '}
+          {record.updated_months.map((m) => dayjs(`${m}-01`).format('MMMM YYYY')).join(', ')}. Ich zestawienia
+          Excel zostały przeliczone.
+        </Alert>
+      ) : null}
+
       {result.unreadable.length ? (
         <Alert color="orange" icon={<IconAlertTriangle />} title="Nie wszystkie wyciągi udało się odczytać">
           {result.unreadable.map((m) => (
@@ -288,12 +311,12 @@ function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenRepo
         <Stat label="Odczytane wyciągi" value={result.statements} />
         <Stat label="Obciążenia z fakturą" value={matched} color="green" />
         <Stat label="Obciążenia BEZ FAKTURY" value={missing} color={missing ? 'red' : 'green'} />
-        <Stat label="Faktury bez płatności" value={unpaidOpen} color={unpaidOpen ? 'red' : 'green'}
-          hint={`z ${result.unpaid.length} spoza wyciągów`} />
+        <Stat label="Faktury niezapłacone" value={unpaid} color={unpaid ? 'red' : 'green'}
+          hint={`z ${invoices.length} faktur miesiąca`} />
       </SimpleGrid>
 
       <Card withBorder padding="md">
-        <Tabs defaultValue={result.banks[0]?.name ?? 'unpaid'}>
+        <Tabs defaultValue={result.banks[0]?.name ?? 'invoices'}>
           <Tabs.List>
             {result.banks.map((bank) => (
               <Tabs.Tab key={bank.name} value={bank.name}
@@ -301,7 +324,10 @@ function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenRepo
                 {bank.name}
               </Tabs.Tab>
             ))}
-            <Tabs.Tab value="unpaid">Faktury bez płatności</Tabs.Tab>
+            <Tabs.Tab value="invoices"
+              rightSection={unpaid ? <Badge color="red" size="sm" circle>{unpaid}</Badge> : null}>
+              Faktury miesiąca: płatności
+            </Tabs.Tab>
           </Tabs.List>
 
           {result.banks.map((bank) => (
@@ -324,8 +350,8 @@ function Results({ record, onOpenReport }: { record: ReconcileRecord; onOpenRepo
             </Tabs.Panel>
           ))}
 
-          <Tabs.Panel value="unpaid" pt="md">
-            <UnpaidTable rows={result.unpaid} />
+          <Tabs.Panel value="invoices" pt="md">
+            {payments ? <PaymentsTable data={payments} onChanged={onPaymentsChanged} /> : null}
           </Tabs.Panel>
         </Tabs>
       </Card>
@@ -457,46 +483,4 @@ function DebitTable({ title, rows, color }: { title?: string; rows: DebitRow[]; 
 function transferTitle(description: string) {
   const title = description.match(/Tytuł:\s*(.+?)(?:\s+Kwota VAT:|\s+Ident\.:|\s+FV:|$)/)
   return title ? `Tytuł: ${title[1]}` : description
-}
-
-function UnpaidTable({ rows }: { rows: UnpaidRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <Text size="sm" c="dimmed">
-        Wszystkie faktury z miesiąca znaleziono na wyciągach.
-      </Text>
-    )
-  }
-  return (
-    <Table striped verticalSpacing="xs" fz="sm">
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Data faktury</Table.Th>
-          <Table.Th>Numer</Table.Th>
-          <Table.Th>Sprzedawca</Table.Th>
-          <Table.Th ta="right">Brutto</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>Płatność według faktury / uwagi</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.map((row) => (
-          <Table.Tr key={`${row.number}-${row.issue_date}`}>
-            <Table.Td className="nowrap">{formatDate(row.issue_date)}</Table.Td>
-            <Table.Td>{row.number}</Table.Td>
-            <Table.Td>{row.seller}</Table.Td>
-            <Table.Td ta="right" className="amount">
-              {formatMoney(row.gross, row.currency)}
-            </Table.Td>
-            <Table.Td>
-              <Badge variant="light" color={UNPAID_COLORS[row.status] ?? 'gray'}>
-                {row.status}
-              </Badge>
-            </Table.Td>
-            <Table.Td>{row.details}</Table.Td>
-          </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </Table>
-  )
 }

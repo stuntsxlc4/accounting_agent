@@ -40,6 +40,20 @@ def history(limit: int = 10) -> list[dict]:
         return (_read_json(_history_path()) or [])[:limit]
 
 
+def reconciled_months() -> list[str]:
+    """Miesiące, dla których wykonano porównanie z wyciągami (RRRR-MM, rosnąco)."""
+    folder = app_data_dir() / "porownania"
+    return sorted(p.stem for p in folder.glob("*.json")) if folder.is_dir() else []
+
+
+def read_data(name: str) -> Any:
+    return _read_json(app_data_dir() / name)
+
+
+def write_data(name: str, data: Any) -> None:
+    _write_json(app_data_dir() / name, data)
+
+
 def log_dir() -> Path:
     return app_data_dir() / "logi"
 

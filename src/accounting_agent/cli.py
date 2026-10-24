@@ -6,7 +6,6 @@ from pathlib import Path
 from accounting_agent.config import ConfigError, load_config
 from accounting_agent.credentials import CredentialsError, load_private_key, set_key_password
 from accounting_agent.ksef import KsefClient, KsefError
-from accounting_agent.matching import EXPECTS_INVOICE
 from accounting_agent.services import (
     authenticate,
     download_invoices,
@@ -50,17 +49,19 @@ def cmd_reconcile(args: argparse.Namespace) -> None:
     folder = Path(args.statements) if args.statements else None
     result = reconcile(config, month, folder, _print_progress)
 
-    for message in result.unreadable:
+    record = result.record
+    for message in record["unreadable"]:
         print(f"Nie odczytano: {message}")
-    expecting = [d for d in result.debits if d.kind in EXPECTS_INVOICE]
-    print(f"Odczytane wyciągi: {len(result.statements)} (salda zgodne)")
-    print(f"Faktur zakupowych w KSeF z 12 miesięcy: {result.invoice_count}")
-    print(f"Obciążeń: {len(result.debits)}, w tym przelewów i płatności kartą: {len(expecting)}")
-    print(f"  z fakturą: {sum(1 for d in expecting if d.invoice)}")
-    print(f"  BRAK FAKTURY: {sum(1 for d in expecting if not d.invoice)}")
-    print(f"Faktury z miesiąca bez płatności na wyciągach: {len(result.unpaid)}")
-    for status in sorted({u.status for u in result.unpaid}):
-        print(f"  {status}: {sum(1 for u in result.unpaid if u.status == status)}")
+    matched = sum(len(b["matched"]) for b in record["banks"])
+    missing = sum(len(b["missing"]) for b in record["banks"])
+    print(f"Odczytane wyciągi: {record['statements']} (salda zgodne)")
+    print(f"Faktur zakupowych w KSeF z 12 miesięcy: {record['invoice_count']}")
+    print(f"Przelewy i płatności kartą: z fakturą {matched}, BRAK FAKTURY {missing}")
+    print(f"Faktury miesiąca: {len(result.statuses)}")
+    for status in sorted({s.status for s in result.statuses}):
+        print(f"  {status}: {sum(1 for s in result.statuses if s.status == status)}")
+    if result.updated_months:
+        print(f"Zaktualizowano też zestawienia: {', '.join(result.updated_months)}")
     print(f"Zestawienie: {result.report}")
     if args.open_folder:
         open_path(result.folder)

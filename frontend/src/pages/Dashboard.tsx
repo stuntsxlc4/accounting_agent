@@ -84,6 +84,25 @@ export function Dashboard({ status, go }: Props) {
         </Alert>
       ) : null}
 
+      {overview?.to_explain.length ? (
+        <Alert color="red" icon={<IconAlertTriangle />} title="Faktury do wyjaśnienia" mb="lg">
+          <Stack gap="xs">
+            <Text size="sm">
+              Te faktury nie zostały znalezione na wyciągach przez co najmniej 2 miesiące. Sprawdź, czy są
+              zapłacone, albo oznacz je jako gotówka.
+            </Text>
+            <Group gap="xs">
+              {overview.to_explain.map((item) => (
+                <Button key={item.month} size="xs" variant="light" color="red"
+                  onClick={() => go('statements', item.month)}>
+                  {item.label}: {item.count}
+                </Button>
+              ))}
+            </Group>
+          </Stack>
+        </Alert>
+      ) : null}
+
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
         {overview === null ? (
           <>
@@ -110,13 +129,14 @@ export function Dashboard({ status, go }: Props) {
             <StepCard
               icon={<IconBuildingBank size={26} />}
               title={`Wyciągi i płatności: ${monthLabel}`}
-              done={overview.reconcile !== null && overview.reconcile.missing === 0 && overview.reconcile.unpaid_open === 0}
-              warning={overview.reconcile !== null && (overview.reconcile.missing > 0 || overview.reconcile.unpaid_open > 0)}
+              done={overview.reconcile !== null && overview.reconcile.missing === 0 && overview.reconcile.unpaid === 0}
+              warning={overview.reconcile !== null && (overview.reconcile.missing > 0 || overview.reconcile.unpaid > 0)}
               lines={
                 overview.reconcile
                   ? [
-                      `Z fakturą: ${overview.reconcile.matched}, bez faktury: ${overview.reconcile.missing}, ` +
-                        `faktur bez płatności: ${overview.reconcile.unpaid_open}`,
+                      `Obciążenia z fakturą: ${overview.reconcile.matched}, bez faktury: ${overview.reconcile.missing}`,
+                      `Faktury: zapłacone ${overview.payments.paid}, gotówka ${overview.payments.cash}, ` +
+                        `niezapłacone ${overview.reconcile.unpaid}`,
                       `Porównano ${formatDateTime(overview.reconcile.created_at)}`,
                     ]
                   : [

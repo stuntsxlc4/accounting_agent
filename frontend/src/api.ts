@@ -64,6 +64,43 @@ export interface InvoiceFile {
   invoice_type: string
   file_name: string
   downloaded: boolean
+  payment: PaymentRow | null
+}
+
+export type PaymentStatus =
+  | 'zapłacona przelewem'
+  | 'zapłacona kartą'
+  | 'gotówka'
+  | 'niezapłacona'
+  | 'do wyjaśnienia'
+  | 'sprzeczność'
+  | 'skorygowana do zera'
+  | 'korekta'
+
+export interface PaymentRow {
+  ksef_number: string
+  issue_date: string
+  number: string
+  seller: string
+  seller_nip: string
+  gross: number
+  currency: string
+  status: PaymentStatus
+  details: string
+  method: string
+  paid_date: string | null
+  bank: string
+  statement_month: string | null
+  paid_later: boolean
+  cash: boolean
+}
+
+export interface MonthPayments {
+  month: string
+  label: string
+  reconciled: boolean
+  last_reconciled: string | null
+  invoices: PaymentRow[]
 }
 
 export interface MonthInvoices {
@@ -92,13 +129,14 @@ export interface ReconcileRecord {
   month: string
   created_at: string
   result: ReconcileResult
+  updated_months?: string[]
 }
 
 export interface ReconcileSummary {
   created_at: string
   matched: number
   missing: number
-  unpaid_open: number
+  unpaid: number
   unreadable: number
 }
 
@@ -108,6 +146,8 @@ export interface Overview {
   invoices: { count: number; downloaded: number; fetched_at: string | null }
   statements: number
   reconcile: ReconcileSummary | null
+  payments: { paid: number; cash: number; unpaid: number; to_explain: number }
+  to_explain: { month: string; label: string; count: number }[]
 }
 
 export interface HistoryItem {
@@ -143,23 +183,12 @@ export interface DebitRow {
   note: string
 }
 
-export interface UnpaidRow {
-  issue_date: string
-  number: string
-  seller: string
-  gross: number
-  currency: string
-  status: string
-  details: string
-}
-
 export interface ReconcileResult {
   report: string
   statements: number
   unreadable: string[]
   invoice_count: number
   banks: { name: string; matched: DebitRow[]; missing: DebitRow[]; other: DebitRow[] }[]
-  unpaid: UnpaidRow[]
 }
 
 export type OpenTarget = 'invoices_folder' | 'statements_folder' | 'invoice' | 'report' | 'logs'
@@ -184,6 +213,9 @@ export const api = {
   reconcile: (month: string) => post<{ job_id: string }>('/api/reconcile', { month }),
   lastReconcile: (month: string) =>
     request<{ record: ReconcileRecord | null }>(`/api/reconcile/last?month=${month}`),
+  payments: (month: string) => request<MonthPayments>(`/api/payments?month=${month}`),
+  setCash: (month: string, ksefNumber: string, cash: boolean) =>
+    post<MonthPayments>('/api/payments/cash', { month, ksef_number: ksefNumber, cash }),
   overview: (month: string) => request<Overview>(`/api/overview?month=${month}`),
   history: () => request<HistoryItem[]>('/api/history'),
   runningJob: () => request<{ job: Job | null }>('/api/jobs'),

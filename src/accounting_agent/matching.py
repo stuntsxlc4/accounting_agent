@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from accounting_agent.invoice import Invoice
 from accounting_agent.naming import short_company_name
 from accounting_agent.statements.models import Transaction
 
@@ -26,17 +25,12 @@ BY_NUMBER = "numer faktury"
 BY_AMOUNT_AND_NAME = "kwota i kontrahent"
 BY_AMOUNT = "tylko kwota – sprawdź"
 
-# Status faktur, których płatności nie ma na wyciągach
-NOT_PAID = "brak płatności"
-OTHER_CARD = "zapłacona kartą spoza wyciągów"
-PAID_OTHERWISE = "zapłacona wg faktury"
-CORRECTED_TO_ZERO = "skorygowana do zera"
-CORRECTION = "korekta"
-
 # Faktura może być wystawiona do kilku dni po płatności kartą lub przedpłacie.
 ISSUED_AFTER_PAYMENT_DAYS = 14
 # Krótsze numery ("1/2026") szukamy tylko po etykiecie FV:/Tytuł:, żeby nie trafiać w daty.
 MIN_NUMBER_IN_TEXT = 6
+# "na Rachunek Własny", "Przelew Własny na Rachunek firmowy", "rachunek wlasny"
+OWN_ACCOUNT = re.compile(r"\bw[łl]asn(?:y|ego)\b")
 INVOICE_REF = re.compile(r"(?:FV|Tytuł):\s*(\S+)")
 SELLER_NIP = re.compile(r"Ident\.:\s*(\d{10})")
 
@@ -93,7 +87,7 @@ def classify(transaction: Transaction) -> str:
         return CARD
     if "lokat" in text:
         return DEPOSIT
-    if "rachunek własny" in text or "rachunek wlasny" in text:
+    if OWN_ACCOUNT.search(text):
         return OWN_TRANSFER
     if first_line.startswith(("opłat", "prowizj")):
         return BANK_FEE
@@ -136,86 +130,6 @@ def match(debits: list[Debit], invoices: list[InvoiceRef]) -> None:
         refs = INVOICE_REF.findall(debit.transaction.text)
         if debit.invoice is None and refs:
             debit.note = f"w tytule przelewu: {refs[0]} – nie ma tej faktury w KSeF"
-
-
-@dataclass(frozen=True)
-class UnpaidInvoice:
-    invoice: InvoiceRef
-    status: str
-    details: str = ""  # np. "karta, zapłacono 08-08-2026" albo "koryguje 95/ZAL/26-08"
-    corrects: tuple[str, ...] = ()  # numery faktur, które koryguje ta korekta
-
-
-def is_correction(invoice: InvoiceRef) -> bool:
-    return invoice.gross <= 0 or invoice.invoice_type.upper().startswith("KOR")
-
-
-def explain_unpaid(invoice: InvoiceRef, parsed: Invoice) -> UnpaidInvoice:
-    """Status faktury bez płatności na wyciągach, według danych z faktury.
-
-    Faktura opłacona kartą (np. paliwo), której nie ma na wyciągach, była zapłacona
-    inną kartą niż ta, której wyciągi porównujemy.
-    """
-    if is_correction(invoice):
-        details = ", ".join(
-            f"koryguje {' '.join(number.split())}" + (f" z {_day(issued)}" if issued else "")
-            for number, issued in parsed.corrected
-        )
-        corrects = tuple(number for number, _ in parsed.corrected)
-        return UnpaidInvoice(invoice, CORRECTION, details, corrects)
-
-    payment = parsed.payment
-    if payment is None:
-        return UnpaidInvoice(invoice, NOT_PAID, "brak danych o płatności na fakturze")
-    details = [payment.form] if payment.form else []
-    if payment.paid:
-        details.append(
-            f"zapłacono {payment.paid_date:%d-%m-%Y}" if payment.paid_date else "zapłacono"
-        )
-    details += [f"termin {due:%d-%m-%Y}" for due in payment.due_dates]
-    if payment.paid and payment.form == "karta":
-        status = OTHER_CARD
-    elif payment.paid:
-        status = PAID_OTHERWISE
-    else:
-        status = NOT_PAID
-    return UnpaidInvoice(invoice, status, ", ".join(details))
-
-
-def settle_corrections(items: list[UnpaidInvoice]) -> list[UnpaidInvoice]:
-    """Faktura bez płatności, którą korekty z tego samego okresu zerują, nie wymaga zapłaty."""
-    corrections = [i for i in items if i.status == CORRECTION]
-    settled = []
-    for item in items:
-        number = _norm_number(item.invoice.number)
-        own = [
-            c
-            for c in corrections
-            if c.invoice.seller_nip == item.invoice.seller_nip
-            and number in {_norm_number(n) for n in c.corrects}
-        ]
-        if item.status == NOT_PAID and own:
-            if item.invoice.gross + sum(c.invoice.gross for c in own) == 0:
-                numbers = ", ".join(c.invoice.number for c in own)
-                item = UnpaidInvoice(
-                    item.invoice, CORRECTED_TO_ZERO, f"{item.details}; korekta: {numbers}"
-                )
-        settled.append(item)
-    return settled
-
-
-def _day(text: str) -> str:
-    try:
-        return f"{date.fromisoformat(text):%d-%m-%Y}"
-    except ValueError:
-        return text
-
-
-def unpaid(invoices: list[InvoiceRef], debits: list[Debit], date_from, date_to) -> list:
-    matched = {d.invoice.ksef_number for d in debits if d.invoice}
-    return [
-        i for i in invoices if date_from <= i.issue_date <= date_to and i.ksef_number not in matched
-    ]
 
 
 def _by_number(debit: Debit, invoices: list[InvoiceRef]) -> InvoiceRef | None:
