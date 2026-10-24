@@ -27,3 +27,8 @@ certs/
 *.pem
 *.p12
 *.pfx
+
+# Testy
+.coverage
+.coverage.*
+htmlcov/
